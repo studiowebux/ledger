@@ -21,7 +21,13 @@ export class LedgerManager {
     try {
       this.ledger.processTransaction(fromCharacterId, toCharacterId, assets);
       if (metadata) {
-        this.processor.process(metadata);
+        this.processor.process(
+          metadata.map((meta) => ({
+            ...meta,
+            sender: fromCharacterId,
+            recipient: toCharacterId,
+          })),
+        );
       }
     } catch (e) {
       throw new Error(`Transaction failed: ${(e as Error).message}`);

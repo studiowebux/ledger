@@ -26,16 +26,18 @@ deno deno task demo-2
 ```bash
 Task demo deno run __tests__/sequence.test.ts
 Transaction started.
-UTXO created: 556b2885-ce9c-49d3-992d-57db298e2505
+UTXO created: 94a282eb-fba2-4750-9cb9-428d9ade4bce
 Transaction committed.
-Funds added with success 556b2885-ce9c-49d3-992d-57db298e2505
+Funds added with success 94a282eb-fba2-4750-9cb9-428d9ade4bce
 Alice's Balance: { coin: 100n, gold: 1000n }
+
+
 
 
 Transfer 30 from Alice to Bob
 Transaction started.
-UTXO created: 5156954d-6da8-4b29-890e-37f9a7051338
-UTXO created: 738a449e-97b7-4ffa-b110-884e2c0c2e34
+UTXO created: a7c5e994-e29a-432c-93c0-f65d5aeb7127
+UTXO created: d95f6e75-d588-4699-aae1-c815705455a9
 Transaction committed.
 Transaction processed successfully!
 ┌───────┬────────────────────────────┬───────┐
@@ -47,14 +49,15 @@ Transaction processed successfully!
 └───────┴────────────────────────────┴───────┘
 
 
+
 Exchange 30 from Alice to Bob to Buy a boat_1
 Transaction started.
-UTXO created: 2d7b38a8-7d94-428f-bc10-64c34e4e5188
-UTXO created: 11678283-36b1-42b3-bc59-b7788b3844b7
+UTXO created: abb58b29-350c-409b-8ca3-bb97e83c9442
+UTXO created: 8a3acfda-ca19-4643-b782-0ba01aefff52
 Transaction committed.
 Transaction processed successfully!
-Delivering item boat_1 to player undefined
-Player undefined now has item: boat_1
+Delivering item boat_1 to player Alice
+Player Alice now has item: boat_1
 ┌───────┬────────────────────────────┬───────┐
 │ (idx) │ balance                    │ utxos │
 ├───────┼────────────────────────────┼───────┤
@@ -64,11 +67,12 @@ Player undefined now has item: boat_1
 └───────┴────────────────────────────┴───────┘
 
 
+
 Exchange 5000 from Alice to Bob to Buy a car_1
 Transaction started.
-UTXO created: a9cb492f-d6d8-490d-9fe2-f60de7a131bb
+UTXO created: d9e2ec0e-1300-4f80-855f-a4fdf0b883fc
 Transaction committed.
-Funds added with success a9cb492f-d6d8-490d-9fe2-f60de7a131bb
+Funds added with success d9e2ec0e-1300-4f80-855f-a4fdf0b883fc
 ┌───────┬──────────────────────────────┬───────┐
 │ (idx) │ balance                      │ utxos │
 ├───────┼──────────────────────────────┼───────┤
@@ -77,12 +81,12 @@ Funds added with success a9cb492f-d6d8-490d-9fe2-f60de7a131bb
 │ Ron   │ {}                           │     0 │
 └───────┴──────────────────────────────┴───────┘
 Transaction started.
-UTXO created: e527b06e-9869-4a55-9250-bf8128cc67d8
-UTXO created: f6c988e0-dc00-411a-a732-ef67feee32af
+UTXO created: a372fd48-1c61-4339-8369-66aba1744fe5
+UTXO created: 72827bd7-a222-4140-a345-f883965bd6ff
 Transaction committed.
 Transaction processed successfully!
-Delivering item car_1 to player undefined
-Player undefined now has item: car_1
+Delivering item car_1 to player Alice
+Player Alice now has item: car_1
 ┌───────┬─────────────────┬───────┐
 │ (idx) │ balance         │ utxos │
 ├───────┼─────────────────┼───────┤
@@ -90,19 +94,15 @@ Player undefined now has item: car_1
 │ Bob   │ { coin: 5060n } │     3 │
 │ Ron   │ {}              │     0 │
 └───────┴─────────────────┴───────┘
+
 
 
 Test with empty wallet
 Transaction started.
 Error processing transaction: Insufficient assets
 Transaction rolled back.
-┌───────┬─────────────────┬───────┐
-│ (idx) │ balance         │ utxos │
-├───────┼─────────────────┼───────┤
-│ Alice │ { gold: 1000n } │     1 │
-│ Bob   │ { coin: 5060n } │     3 │
-│ Ron   │ {}              │     0 │
-└───────┴─────────────────┴───────┘
+
+
 
 
 Send Alice 0 coins to herself
@@ -111,10 +111,12 @@ Error processing transaction: The amount must be higher than 0
 Transaction rolled back.
 
 
+
+
 Send Bob 500 coins to himself
 Transaction started.
-UTXO created: eff1e16c-0467-4a7a-aa44-4af759252246
-UTXO created: 7e3ec504-0bb8-4675-b7de-0a0ff84eac94
+UTXO created: b0138339-df67-443e-87b7-9440ebab6a39
+UTXO created: 77d89e6d-73ce-4cd2-8e96-dfc2d2ee5e0d
 Transaction committed.
 Transaction processed successfully!
 ┌───────┬─────────────────┬───────┐
@@ -126,32 +128,35 @@ Transaction processed successfully!
 └───────┴─────────────────┴───────┘
 
 
+
 Sharing with Ron
 Transaction started.
-UTXO created: 21a14a76-f954-4e11-a192-f8e0f9cde278
-UTXO created: 431a09cb-9582-4b14-a6bd-8b43d10f9274
+UTXO created: ca753ee5-8602-4778-a004-28a2229eecfb
+UTXO created: 4bbee866-64d0-44fd-808f-a32e1ead1ccf
 Transaction committed.
 Transaction processed successfully!
 Transaction started.
-UTXO created: f5f2f967-1f2d-47a6-842a-2cf73e2a3bd2
-UTXO created: d505f161-26d1-45bd-8972-83c05df60624
+UTXO created: 8a41f79e-f1aa-4558-9669-becf53e63bea
+UTXO created: 016bfb25-c9ef-418d-9f56-a851b6c37ce9
 Transaction committed.
 Transaction processed successfully!
 Transaction started.
-UTXO created: ddf80693-ee68-4de3-ac50-b9af274a37f1
-UTXO created: 28fb5518-5f99-4ca7-8a45-93f2cdc1bd9e
+UTXO created: 97b92028-1b33-42c3-be6d-838406187c06
+UTXO created: f7952335-16f1-4c9b-bd5a-b5c6ceeea711
 Transaction committed.
 Transaction processed successfully!
 Transaction started.
-UTXO created: 868fc999-8efa-4e1e-b424-45006d38d287
-UTXO created: a2222854-321b-40f9-b7fc-f575afca9a0c
+UTXO created: 3cabfc24-bcef-48d1-9d0b-bc5c11408447
+UTXO created: 91b5fd1c-c733-4251-94ab-5c7d5ab3375e
 Transaction committed.
 Transaction processed successfully!
+
+
 
 
 Ron gives back to Alice
 Transaction started.
-UTXO created: 92b72dc9-a4ae-4238-b911-8706ac1c2402
+UTXO created: e64b2915-f6af-4078-8036-bebc07e23fa3
 Transaction committed.
 Transaction processed successfully!
 ┌───────┬───────────────────────────┬───────┐
@@ -161,6 +166,7 @@ Transaction processed successfully!
 │ Bob   │ { coin: 5049n }           │     2 │
 │ Ron   │ { coin: 10n }             │     3 │
 └───────┴───────────────────────────┴───────┘
+
 
 
 Testing negative value
@@ -174,6 +180,7 @@ Transaction rolled back.
 │ Bob   │ { coin: 5049n }           │     2 │
 │ Ron   │ { coin: 10n }             │     3 │
 └───────┴───────────────────────────┴───────┘
+
 ```
 
 **Output (demo-2)**

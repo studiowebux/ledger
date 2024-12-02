@@ -21,6 +21,8 @@ function printBalance(ledger: Ledger) {
       utxos: ledger.getUtxos("Ron").length,
     },
   });
+
+  console.log("\n\n");
 }
 
 const processor = new PostTransactionProcessor();
@@ -80,18 +82,6 @@ try {
 } catch {
   // nothing to do for this test.
 }
-
-// console.log("Test Double spending");
-// try {
-//   ledger.processTransaction({
-//     inputs: [utxo.id],
-//     outputs: [{ amount: 1, recipient: "Bob" }],
-//   });
-// } catch (e) {
-//   console.error("Catched", (e as Error).message);
-// }
-
-printBalance(ledger);
 
 console.log("Send Alice 0 coins to herself");
 try {
