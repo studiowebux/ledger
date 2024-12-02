@@ -1,26 +1,20 @@
+export type Unit = string;
+export type Asset = {
+  unit: Unit;
+  amount: bigint;
+};
+
 export type UTXO = {
   id: string;
-  amount: number;
+  assets: Asset[];
   owner: string;
   spent: boolean;
 };
 
-export type TransactionInput = string;
-
-export type TransactionOutput = {
-  amount: number;
-  recipient: string;
-};
-
+// Metadata to interact with the processors
 export type Metadata = {
   sender?: string;
   recipient?: string;
   action: "BuyItem";
   itemId?: string;
-};
-
-export type Transaction = {
-  inputs: TransactionInput[];
-  outputs: TransactionOutput[];
-  metadata?: Metadata[];
 };

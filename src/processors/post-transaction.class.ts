@@ -1,5 +1,5 @@
 import type { Processor } from "../processor.class.ts";
-import type { Transaction } from "../types.ts";
+import type { Metadata } from "../types.ts";
 
 export class PostTransactionProcessor {
   private events: Map<string, Processor> = new Map();
@@ -17,9 +17,7 @@ export class PostTransactionProcessor {
     return this;
   }
 
-  process(transaction: Transaction): void {
-    const { metadata } = transaction;
-
+  process(metadata: Metadata[]): void {
     if (!metadata) {
       console.log("No post-transaction actions required.");
       return;

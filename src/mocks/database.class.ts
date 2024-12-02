@@ -1,4 +1,4 @@
-import type { UTXO } from "../types.ts";
+import type { Asset, UTXO } from "../types.ts";
 
 export class Database {
   private utxos: UTXO[] = [];
@@ -78,15 +78,12 @@ export class Database {
     this.transactionBackup.updated.push(backup);
   }
 
-  // Create a new UTXO (recorded for tracking and rollback)
-  createUTXO(owner: string, amount: number): UTXO {
-    const utxo: UTXO = { id: this.generateId(), amount, owner, spent: false };
+  // Create a new UTXO
+  createUTXO(owner: string, assets: Asset[]): UTXO {
+    const utxo: UTXO = { id: this.generateId(), assets, owner, spent: false };
     this.utxos.push(utxo);
-    console.log(`UTXO created:`, utxo.id, utxo.amount, "coins for", utxo.owner);
-
-    // Track created UTXOs for rollback
+    console.log(`UTXO created:`, utxo.id);
     this.transactionBackup.created.push(utxo);
-
     return utxo;
   }
 

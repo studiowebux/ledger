@@ -1,3 +1,16 @@
+## Ledger
+
+A Small experiment using ChatGPT to build a simple Ledger inspired from the UTXO Model.
+My goal is to get more familiar with the concepts and for that I like to build random stuff to learn.
+
+- Supports multi assets
+- 100% in typescript
+- Mocked database
+- No external dependencies
+- 2 working examples
+- Manager and processors to connect external events (mocked as well)
+- Built with Deno 2
+
 ## Usage
 
 1. Install deno.
@@ -5,166 +18,311 @@
 
 ```bash
 deno deno task demo
+deno deno task demo-2
 ```
 
-**Output**
+**Output (demo)**
 
 ```bash
 Task demo deno run __tests__/sequence.test.ts
 Transaction started.
-UTXO created: c9726387-7f96-484f-8f75-a3bbba6b6546 100 coins for Alice
+UTXO created: 556b2885-ce9c-49d3-992d-57db298e2505
 Transaction committed.
-Funds added with success c9726387-7f96-484f-8f75-a3bbba6b6546
-Alice's Balance: 100
+Funds added with success 556b2885-ce9c-49d3-992d-57db298e2505
+Alice's Balance: { coin: 100n, gold: 1000n }
 
 
 Transfer 30 from Alice to Bob
 Transaction started.
-UTXO c9726387-7f96-484f-8f75-a3bbba6b6546 spent.
-UTXO created: afeb029e-58f0-4c05-babb-4edc7dda0eae 30 coins for Bob
-UTXO created: d3f31dea-abb8-4220-a408-379f7f5d36f2 70 coins for Alice
+UTXO created: 5156954d-6da8-4b29-890e-37f9a7051338
+UTXO created: 738a449e-97b7-4ffa-b110-884e2c0c2e34
 Transaction committed.
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │      70 │     1 │
-│ Bob   │      30 │     1 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Transaction processed successfully!
+┌───────┬────────────────────────────┬───────┐
+│ (idx) │ balance                    │ utxos │
+├───────┼────────────────────────────┼───────┤
+│ Alice │ { coin: 70n, gold: 1000n } │     1 │
+│ Bob   │ { coin: 30n }              │     1 │
+│ Ron   │ {}                         │     0 │
+└───────┴────────────────────────────┴───────┘
 
 
 Exchange 30 from Alice to Bob to Buy a boat_1
 Transaction started.
-UTXO d3f31dea-abb8-4220-a408-379f7f5d36f2 spent.
-UTXO created: 4ecbfd30-b3c9-405e-a21b-ad3f70d7006e 30 coins for Bob
-UTXO created: a4cf955d-11a1-48f1-8772-680113fe21cf 40 coins for Alice
+UTXO created: 2d7b38a8-7d94-428f-bc10-64c34e4e5188
+UTXO created: 11678283-36b1-42b3-bc59-b7788b3844b7
 Transaction committed.
-Delivering item boat_1 to player Alice
-Player Alice now has item: boat_1
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │      40 │     1 │
-│ Bob   │      60 │     2 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Transaction processed successfully!
+Delivering item boat_1 to player undefined
+Player undefined now has item: boat_1
+┌───────┬────────────────────────────┬───────┐
+│ (idx) │ balance                    │ utxos │
+├───────┼────────────────────────────┼───────┤
+│ Alice │ { coin: 40n, gold: 1000n } │     1 │
+│ Bob   │ { coin: 60n }              │     2 │
+│ Ron   │ {}                         │     0 │
+└───────┴────────────────────────────┴───────┘
 
 
 Exchange 5000 from Alice to Bob to Buy a car_1
 Transaction started.
-UTXO created: 5aad2852-5157-449d-953b-e48e022f1402 4960 coins for Alice
+UTXO created: a9cb492f-d6d8-490d-9fe2-f60de7a131bb
 Transaction committed.
-Funds added with success 5aad2852-5157-449d-953b-e48e022f1402
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │    5000 │     2 │
-│ Bob   │      60 │     2 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Funds added with success a9cb492f-d6d8-490d-9fe2-f60de7a131bb
+┌───────┬──────────────────────────────┬───────┐
+│ (idx) │ balance                      │ utxos │
+├───────┼──────────────────────────────┼───────┤
+│ Alice │ { coin: 5000n, gold: 1000n } │     2 │
+│ Bob   │ { coin: 60n }                │     2 │
+│ Ron   │ {}                           │     0 │
+└───────┴──────────────────────────────┴───────┘
 Transaction started.
-UTXO a4cf955d-11a1-48f1-8772-680113fe21cf spent.
-UTXO 5aad2852-5157-449d-953b-e48e022f1402 spent.
-UTXO created: 261495e7-a99c-427f-9f86-da5de5d67f95 5000 coins for Bob
+UTXO created: e527b06e-9869-4a55-9250-bf8128cc67d8
+UTXO created: f6c988e0-dc00-411a-a732-ef67feee32af
 Transaction committed.
-Delivering item car_1 to player Alice
-Player Alice now has item: car_1
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │       0 │     0 │
-│ Bob   │    5060 │     3 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Transaction processed successfully!
+Delivering item car_1 to player undefined
+Player undefined now has item: car_1
+┌───────┬─────────────────┬───────┐
+│ (idx) │ balance         │ utxos │
+├───────┼─────────────────┼───────┤
+│ Alice │ { gold: 1000n } │     1 │
+│ Bob   │ { coin: 5060n } │     3 │
+│ Ron   │ {}              │     0 │
+└───────┴─────────────────┴───────┘
 
 
 Test with empty wallet
 Transaction started.
-UTXO created: 876b7121-0618-4092-bac4-23867c74d076 5000 coins for Bob
+Error processing transaction: Insufficient assets
 Transaction rolled back.
-
-
-Test Double spending
-Transaction started.
-Transaction rolled back.
-Catched UTXO 5aad2852-5157-449d-953b-e48e022f1402 already spent
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │       0 │     0 │
-│ Bob   │    5060 │     3 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+┌───────┬─────────────────┬───────┐
+│ (idx) │ balance         │ utxos │
+├───────┼─────────────────┼───────┤
+│ Alice │ { gold: 1000n } │     1 │
+│ Bob   │ { coin: 5060n } │     3 │
+│ Ron   │ {}              │     0 │
+└───────┴─────────────────┴───────┘
 
 
 Send Alice 0 coins to herself
 Transaction started.
-UTXO created: 44bbe825-fb02-49ac-8cb7-a9fef7b79e90 0 coins for Alice
-Transaction committed.
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │       0 │     1 │
-│ Bob   │    5060 │     3 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Error processing transaction: The amount must be higher than 0
+Transaction rolled back.
 
 
 Send Bob 500 coins to himself
 Transaction started.
-UTXO afeb029e-58f0-4c05-babb-4edc7dda0eae spent.
-UTXO 4ecbfd30-b3c9-405e-a21b-ad3f70d7006e spent.
-UTXO 261495e7-a99c-427f-9f86-da5de5d67f95 spent.
-UTXO created: ef098b32-fa4b-4c2c-8ad0-054f4812b135 555 coins for Bob
-UTXO created: 7bdd358f-d5c0-4962-ae67-7ae1857519db 4505 coins for Bob
+UTXO created: eff1e16c-0467-4a7a-aa44-4af759252246
+UTXO created: 7e3ec504-0bb8-4675-b7de-0a0ff84eac94
 Transaction committed.
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │       0 │     1 │
-│ Bob   │    5060 │     2 │
-│ Ron   │       0 │     0 │
-└───────┴─────────┴───────┘
+Transaction processed successfully!
+┌───────┬─────────────────┬───────┐
+│ (idx) │ balance         │ utxos │
+├───────┼─────────────────┼───────┤
+│ Alice │ { gold: 1000n } │     1 │
+│ Bob   │ { coin: 5060n } │     2 │
+│ Ron   │ {}              │     0 │
+└───────┴─────────────────┴───────┘
 
 
 Sharing with Ron
 Transaction started.
-UTXO ef098b32-fa4b-4c2c-8ad0-054f4812b135 spent.
-UTXO 7bdd358f-d5c0-4962-ae67-7ae1857519db spent.
-UTXO created: 6c83253f-bb83-4176-b45f-a9eb550c13cf 1 coins for Ron
-UTXO created: 8d4d49c6-9bc4-4425-9ae7-77d6eabedd3b 5059 coins for Bob
+UTXO created: 21a14a76-f954-4e11-a192-f8e0f9cde278
+UTXO created: 431a09cb-9582-4b14-a6bd-8b43d10f9274
 Transaction committed.
+Transaction processed successfully!
 Transaction started.
-UTXO 8d4d49c6-9bc4-4425-9ae7-77d6eabedd3b spent.
-UTXO created: 66a635bb-5df2-4633-89df-209fb9149000 2 coins for Ron
-UTXO created: c4fd3eb3-0bbc-40a6-9c03-9c88f19d49f2 5057 coins for Bob
+UTXO created: f5f2f967-1f2d-47a6-842a-2cf73e2a3bd2
+UTXO created: d505f161-26d1-45bd-8972-83c05df60624
 Transaction committed.
+Transaction processed successfully!
 Transaction started.
-UTXO c4fd3eb3-0bbc-40a6-9c03-9c88f19d49f2 spent.
-UTXO created: ea4e45a3-531d-4d82-90f9-b1d6fe7325eb 3 coins for Ron
-UTXO created: 3194f4a1-f9c1-4d3d-bbc6-56688839dc4d 5054 coins for Bob
+UTXO created: ddf80693-ee68-4de3-ac50-b9af274a37f1
+UTXO created: 28fb5518-5f99-4ca7-8a45-93f2cdc1bd9e
 Transaction committed.
+Transaction processed successfully!
 Transaction started.
-UTXO 3194f4a1-f9c1-4d3d-bbc6-56688839dc4d spent.
-UTXO created: 54178240-4db4-4dda-a1f9-a390970bc698 5 coins for Ron
-UTXO created: 05e137c0-7aa9-4ce5-835a-093ca874da90 5049 coins for Bob
+UTXO created: 868fc999-8efa-4e1e-b424-45006d38d287
+UTXO created: a2222854-321b-40f9-b7fc-f575afca9a0c
 Transaction committed.
+Transaction processed successfully!
 
 
 Ron gives back to Alice
 Transaction started.
-UTXO 6c83253f-bb83-4176-b45f-a9eb550c13cf spent.
-UTXO 66a635bb-5df2-4633-89df-209fb9149000 spent.
-UTXO ea4e45a3-531d-4d82-90f9-b1d6fe7325eb spent.
-UTXO 54178240-4db4-4dda-a1f9-a390970bc698 spent.
-UTXO created: 51788ee0-1ea7-410a-85e8-4469a2889292 1 coins for Alice
-UTXO created: a50930fd-642f-4a08-9848-2b4f5014313e 10 coins for Ron
+UTXO created: 92b72dc9-a4ae-4238-b911-8706ac1c2402
 Transaction committed.
-┌───────┬─────────┬───────┐
-│ (idx) │ balance │ utxos │
-├───────┼─────────┼───────┤
-│ Alice │       1 │     2 │
-│ Bob   │    5049 │     1 │
-│ Ron   │      10 │     1 │
-└───────┴─────────┴───────┘
+Transaction processed successfully!
+┌───────┬───────────────────────────┬───────┐
+│ (idx) │ balance                   │ utxos │
+├───────┼───────────────────────────┼───────┤
+│ Alice │ { gold: 1000n, coin: 1n } │     2 │
+│ Bob   │ { coin: 5049n }           │     2 │
+│ Ron   │ { coin: 10n }             │     3 │
+└───────┴───────────────────────────┴───────┘
+
+
+Testing negative value
+Transaction started.
+Error processing transaction: The amount must be higher than 0
+Transaction rolled back.
+┌───────┬───────────────────────────┬───────┐
+│ (idx) │ balance                   │ utxos │
+├───────┼───────────────────────────┼───────┤
+│ Alice │ { gold: 1000n, coin: 1n } │     2 │
+│ Bob   │ { coin: 5049n }           │     2 │
+│ Ron   │ { coin: 10n }             │     3 │
+└───────┴───────────────────────────┴───────┘
+```
+
+**Output (demo-2)**
+
+```bash
+Task demo-2 deno run __tests__/multi-assets.test.ts
+Transaction started.
+UTXO created: c75fb6a0-82ff-4e1c-a9a1-467efea68570
+Transaction committed.
+Funds added with success c75fb6a0-82ff-4e1c-a9a1-467efea68570
+Transaction started.
+UTXO created: 38ee93b4-0eda-470b-af3c-0e03e9a09055
+Transaction committed.
+Funds added with success 38ee93b4-0eda-470b-af3c-0e03e9a09055
+Transaction started.
+UTXO created: a5153e9c-2422-47ee-97da-163410849a70
+UTXO created: 34e2f503-5924-4d5a-85dc-c017a75c74de
+Transaction committed.
+Transaction processed successfully!
+Transaction started.
+UTXO created: be0f9ebe-3d17-45c4-bf75-c3628600289a
+UTXO created: 47b43840-de5e-432f-86c5-86ebe0206978
+Transaction committed.
+Transaction processed successfully!
+{ gold: 499n, silver: 777n, coin: 10000n } [
+  {
+    id: "47b43840-de5e-432f-86c5-86ebe0206978",
+    assets: [
+      { unit: "gold", amount: 499n },
+      { unit: "silver", amount: 777n },
+      { unit: "coin", amount: 10000n }
+    ],
+    owner: "wallet_1",
+    spent: false
+  }
+]
+{ gold: 624n } [
+  {
+    id: "a5153e9c-2422-47ee-97da-163410849a70",
+    assets: [ { amount: 500n, unit: "gold" } ],
+    owner: "wallet_2",
+    spent: false
+  },
+  {
+    id: "be0f9ebe-3d17-45c4-bf75-c3628600289a",
+    assets: [ { amount: 124n, unit: "gold" } ],
+    owner: "wallet_2",
+    spent: false
+  }
+]
+{
+  "db": {
+    "utxos": [
+      {
+        "id": "c75fb6a0-82ff-4e1c-a9a1-467efea68570",
+        "assets": [
+          {
+            "amount": 1000,
+            "unit": "gold"
+          },
+          {
+            "amount": 777,
+            "unit": "silver"
+          },
+          {
+            "amount": 10000,
+            "unit": "coin"
+          }
+        ],
+        "owner": "wallet_1",
+        "spent": true
+      },
+      {
+        "id": "38ee93b4-0eda-470b-af3c-0e03e9a09055",
+        "assets": [
+          {
+            "amount": 123,
+            "unit": "gold"
+          }
+        ],
+        "owner": "wallet_1",
+        "spent": true
+      },
+      {
+        "id": "a5153e9c-2422-47ee-97da-163410849a70",
+        "assets": [
+          {
+            "amount": 500,
+            "unit": "gold"
+          }
+        ],
+        "owner": "wallet_2",
+        "spent": false
+      },
+      {
+        "id": "34e2f503-5924-4d5a-85dc-c017a75c74de",
+        "assets": [
+          {
+            "unit": "gold",
+            "amount": 500
+          },
+          {
+            "unit": "silver",
+            "amount": 777
+          },
+          {
+            "unit": "coin",
+            "amount": 10000
+          }
+        ],
+        "owner": "wallet_1",
+        "spent": true
+      },
+      {
+        "id": "be0f9ebe-3d17-45c4-bf75-c3628600289a",
+        "assets": [
+          {
+            "amount": 124,
+            "unit": "gold"
+          }
+        ],
+        "owner": "wallet_2",
+        "spent": false
+      },
+      {
+        "id": "47b43840-de5e-432f-86c5-86ebe0206978",
+        "assets": [
+          {
+            "unit": "gold",
+            "amount": 499
+          },
+          {
+            "unit": "silver",
+            "amount": 777
+          },
+          {
+            "unit": "coin",
+            "amount": 10000
+          }
+        ],
+        "owner": "wallet_1",
+        "spent": false
+      }
+    ],
+    "transactionInProgress": false,
+    "transactionBackup": {
+      "created": [],
+      "updated": []
+    }
+  }
+}
 ```
