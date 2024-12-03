@@ -16,15 +16,16 @@ export class LedgerManager {
     toCharacterId: string,
     assets: Asset[],
     metadata?: Metadata[],
-  ): Promise<void> {
+  ): Promise<string> {
     // Process the transaction
     try {
-      await this.ledger.processTransaction(
+      const requestId = this.ledger.addRequest(
         fromCharacterId,
         toCharacterId,
         assets,
       );
       if (metadata) {
+        await this.ledger.getQueue().waitForCompletion(requestId);
         await this.processor.process(
           metadata.map((meta) => ({
             ...meta,
@@ -33,6 +34,7 @@ export class LedgerManager {
           })),
         );
       }
+      return requestId;
     } catch (e) {
       throw new Error(`Transaction failed: ${(e as Error).message}`);
     }

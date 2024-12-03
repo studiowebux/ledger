@@ -45,49 +45,26 @@ await ledger.addFunds("Alice", [
 await printBalance(ledger);
 await ledger.addFunds("Alice", [{ amount: BigInt(123), unit: "gold" }]);
 await printBalance(ledger);
-await ledger.processTransaction("Alice", "Bob", [
-  { amount: BigInt(500), unit: "gold" },
-]);
-await printBalance(ledger);
-await ledger.processTransaction("Alice", "Bob", [
-  { amount: BigInt(124), unit: "gold" },
-]);
+ledger.addRequest("Alice", "Bob", [{ amount: BigInt(500), unit: "gold" }]);
+printBalance(ledger);
+ledger.addRequest("Alice", "Bob", [{ amount: BigInt(124), unit: "gold" }]);
 await printBalance(ledger);
 
 // send 55 gold from alice to bob (expect 679 gold to bob)
 // Throw an error if already spent.
 await Promise.all([
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(1), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(2), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(3), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(4), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(5), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(6), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(7), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(8), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(9), unit: "gold" },
-  ]),
-  ledger.processTransaction("Alice", "Bob", [
-    { amount: BigInt(10), unit: "gold" },
-  ]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(1), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(2), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(3), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(4), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(5), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(6), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(7), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(8), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(9), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(10), unit: "gold" }]),
 ]);
+// console.log(ledger.getQueue().getItems("Alice"));
 await printBalance(ledger);
 
 // console.log(await ledger.getBalance("Alice"), await ledger.getUtxos("Alice"));
@@ -107,5 +84,35 @@ await ledger.addFunds("Ron", [
   { unit: "coin", amount: BigInt(3_333_666_666_999_999) },
 ]);
 await printBalance(ledger);
+
+await ledger.getQueue().waitForAllCompletion();
+
+await Promise.all([
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(1), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(1), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(2), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(2), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(3), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(3), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(4), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(4), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(5), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(5), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(6), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(6), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(7), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(7), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(8), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(8), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(9), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(9), unit: "gold" }]),
+  ledger.addRequest("Bob", "Alice", [{ amount: BigInt(10), unit: "gold" }]),
+  ledger.addRequest("Alice", "Bob", [{ amount: BigInt(10), unit: "gold" }]),
+]);
+
+await ledger.getQueue().waitForAllCompletion();
+await printBalance(ledger);
+
+console.log("DLQ", ledger.getQueue().getDeadLetterQueue());
 
 await db.sql.end();

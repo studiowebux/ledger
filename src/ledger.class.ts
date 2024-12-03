@@ -1,53 +1,20 @@
 import type postgres from "postgresjs";
 import { Postgres } from "./db/postgres.class.ts";
 import type { UTXO, Asset } from "./types.ts";
-
-type RetryOptions = {
-  retries: number; // Maximum number of retry attempts
-  delay: number; // Initial delay in milliseconds
-  factor?: number; // Multiplier for the delay after each attempt
-  onRetry?: (attempt: number, error: unknown) => void; // Callback for retry events
-};
-
-async function retryWithBackoff<T>(
-  task: () => Promise<T>,
-  options: RetryOptions,
-): Promise<T> {
-  const { retries, delay, factor = 2, onRetry } = options;
-  let attempt = 0;
-
-  while (attempt <= retries) {
-    try {
-      // Try executing the task
-      return await task();
-    } catch (error) {
-      attempt++;
-
-      // If we've exceeded retries, throw the error
-      if (attempt > retries) {
-        throw error;
-      }
-
-      // Optional callback on retry
-      onRetry?.(attempt, error);
-
-      // Calculate the next delay (exponential backoff)
-      const backoffDelay = delay * Math.pow(factor, attempt - 1);
-
-      // Wait before retrying
-      await new Promise((resolve) => setTimeout(resolve, backoffDelay));
-    }
-  }
-
-  // This line is unreachable but included for type safety
-  throw new Error("Unexpected execution flow in retry logic.");
-}
+import { retryWithBackoff } from "./retry.ts";
+import { Queue } from "./queue.class.ts";
 
 export class Ledger {
   private db: Postgres;
+  private queue: Queue;
 
   constructor(db: Postgres) {
     this.db = db;
+    this.queue = new Queue();
+  }
+
+  public getQueue() {
+    return this.queue;
   }
 
   async addFunds(walletId: string, assets: Asset[]): Promise<UTXO> {
@@ -75,99 +42,95 @@ export class Ledger {
     return await this.db.findUTXOFor(walletId);
   }
 
-  async processTransaction(
-    sender: string,
-    recipient: string,
-    assetsToSend: Asset[],
-  ): Promise<boolean> {
-    const output = await retryWithBackoff(
-      async () => {
-        try {
-          const isValid = assetsToSend.every((asset) => asset.amount > 0);
-
-          if (!isValid) {
-            throw new Error("The amount must be higher than 0");
-          }
-
+  addRequest(sender: string, recipient: string, assetsToSend: Asset[]): string {
+    return this.queue.enqueue(sender, async () => {
+      const output = await retryWithBackoff(
+        async () => {
           try {
-            await this.db.sql.begin(async (sql: postgres.Sql) => {
-              const senderUtxos = await this.db.findUTXOFor(sender, { sql });
-              const collectedAssets: { [id: string]: bigint } = {};
-              const usedUtxos: UTXO[] = [];
+            const isValid = assetsToSend.every((asset) => asset.amount > 0);
 
-              // Collect UTXOs until we have enough assets
-              for (const utxo of senderUtxos) {
-                for (const asset of utxo.assets) {
-                  collectedAssets[asset.unit] =
-                    (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
+            if (!isValid) {
+              throw new Error("The amount must be higher than 0");
+            }
+
+            try {
+              await this.db.sql.begin(async (sql: postgres.Sql) => {
+                const senderUtxos = await this.db.findUTXOFor(sender, { sql });
+                const collectedAssets: { [id: string]: bigint } = {};
+                const usedUtxos: UTXO[] = [];
+
+                // Collect UTXOs until we have enough assets
+                for (const utxo of senderUtxos) {
+                  for (const asset of utxo.assets) {
+                    collectedAssets[asset.unit] =
+                      (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
+                  }
+                  usedUtxos.push(utxo);
+                  const isFulfilled = assetsToSend.every(
+                    (asset) => collectedAssets[asset.unit] >= asset.amount,
+                  );
+                  if (isFulfilled) {
+                    break;
+                  }
                 }
-                usedUtxos.push(utxo);
-                const isFulfilled = assetsToSend.every(
-                  (asset) => collectedAssets[asset.unit] >= asset.amount,
+
+                // Check if we have all required assets
+                const hasEnough = assetsToSend.every(
+                  (asset) => (collectedAssets[asset.unit] || 0) >= asset.amount,
                 );
-                if (isFulfilled) {
-                  break;
+                if (!hasEnough) {
+                  throw new Error("Insufficient assets");
                 }
-              }
 
-              // Check if we have all required assets
-              const hasEnough = assetsToSend.every(
-                (asset) => (collectedAssets[asset.unit] || 0) >= asset.amount,
-              );
-              if (!hasEnough) {
-                throw new Error("Insufficient assets");
-              }
-
-              // Spend UTXOs
-              for (const utxo of usedUtxos) {
-                await this.db.updateUTXO(utxo.id, true, { sql });
-              }
-
-              // Create new UTXO for the recipient
-              await this.db.createUTXO(recipient, assetsToSend, { sql });
-
-              // Handle change: return unused assets to the sender
-              const remainingAssets: Asset[] = [];
-              for (const [unit, amount] of Object.entries(collectedAssets)) {
-                const requiredAmount =
-                  assetsToSend.find((asset) => asset.unit === unit)?.amount ||
-                  BigInt(0);
-                if (amount > requiredAmount) {
-                  remainingAssets.push({
-                    unit,
-                    amount: amount - requiredAmount,
-                  });
+                // Spend UTXOs
+                for (const utxo of usedUtxos) {
+                  await this.db.updateUTXO(utxo.id, true, { sql });
                 }
-              }
-              if (remainingAssets.length > 0) {
-                await this.db.createUTXO(sender, remainingAssets, { sql });
-              }
 
-              console.log(`Transaction processed successfully!`);
-            });
+                // Create new UTXO for the recipient
+                await this.db.createUTXO(recipient, assetsToSend, { sql });
 
-            return true;
-          } catch (e) {
-            console.error("Transaction Failed", (e as Error).message);
-            throw e;
+                // Handle change: return unused assets to the sender
+                const remainingAssets: Asset[] = [];
+                for (const [unit, amount] of Object.entries(collectedAssets)) {
+                  const requiredAmount =
+                    assetsToSend.find((asset) => asset.unit === unit)?.amount ||
+                    BigInt(0);
+                  if (amount > requiredAmount) {
+                    remainingAssets.push({
+                      unit,
+                      amount: amount - requiredAmount,
+                    });
+                  }
+                }
+                if (remainingAssets.length > 0) {
+                  await this.db.createUTXO(sender, remainingAssets, { sql });
+                }
+
+                console.log(`Transaction processed successfully!`);
+              });
+            } catch (e) {
+              console.error("Transaction Failed", (e as Error).message);
+              throw e;
+            }
+          } catch (error) {
+            console.error(
+              "Error processing transaction:",
+              (error as Error).message,
+            );
+            throw error;
           }
-        } catch (error) {
-          console.error(
-            "Error processing transaction:",
-            (error as Error).message,
-          );
-          throw error;
-        }
-      },
-      {
-        retries: 10,
-        delay: 250, // Start with 250ms
-        factor: 2, // Exponential backoff multiplier
-        onRetry: (attempt, error) =>
-          console.log(`Retry attempt ${attempt}: ${error}`),
-      },
-    );
+        },
+        {
+          retries: 10,
+          delay: 250, // Start with 250ms
+          factor: 2, // Exponential backoff multiplier
+          onRetry: (attempt, error) =>
+            console.log(`Retry attempt ${attempt}: ${error}`),
+        },
+      );
 
-    return output;
+      return output;
+    });
   }
 }

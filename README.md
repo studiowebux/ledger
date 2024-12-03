@@ -11,6 +11,7 @@ My goal is to get more familiar with the concepts and for that I like to build r
 - Manager and processors to connect external events (mocked)
 - Built with Deno 2
 - Exponential backoff mechanism to retry processing requests when selected UTXO is already spent.
+- Added queue to process wallet in parallel, and each of there transactions sequentially to reduce the UTXO already spent issue. (but now I need to distribute the load, next step)
 
 ## Usage
 
