@@ -11,6 +11,13 @@ export type UTXO = {
   spent: boolean;
 };
 
+export type RawUTXO = {
+  id: string;
+  assets: string; // cbor encoded
+  owner: string;
+  spent: boolean;
+};
+
 // Metadata to interact with the processors
 export type Metadata = {
   sender?: string;

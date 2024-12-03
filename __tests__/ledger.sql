@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS utxos (
+    id VARCHAR(255) PRIMARY KEY,
+    assets BYTEA NOT NULL,
+    owner VARCHAR(255) NOT NULL,
+    spent BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW (),
+    updated_at TIMESTAMP DEFAULT NOW ()
+);

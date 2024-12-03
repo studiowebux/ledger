@@ -11,17 +11,21 @@ export class LedgerManager {
     this.processor = processor;
   }
 
-  transferFunds(
+  async transferFunds(
     fromCharacterId: string,
     toCharacterId: string,
     assets: Asset[],
     metadata?: Metadata[],
-  ): void {
+  ): Promise<void> {
     // Process the transaction
     try {
-      this.ledger.processTransaction(fromCharacterId, toCharacterId, assets);
+      await this.ledger.processTransaction(
+        fromCharacterId,
+        toCharacterId,
+        assets,
+      );
       if (metadata) {
-        this.processor.process(
+        await this.processor.process(
           metadata.map((meta) => ({
             ...meta,
             sender: fromCharacterId,

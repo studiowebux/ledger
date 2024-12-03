@@ -17,7 +17,7 @@ export class PostTransactionProcessor {
     return this;
   }
 
-  process(metadata: Metadata[]): void {
+  async process(metadata: Metadata[]): Promise<void> {
     if (!metadata) {
       console.log("No post-transaction actions required.");
       return;
