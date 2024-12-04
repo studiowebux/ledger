@@ -6,3 +6,14 @@ CREATE TABLE IF NOT EXISTS utxos (
     created_at TIMESTAMP DEFAULT NOW (),
     updated_at TIMESTAMP DEFAULT NOW ()
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id VARCHAR(255) PRIMARY KEY,
+    filed BOOLEAN DEFAULT FALSE,
+    failed BOOLEAN DEFAULT FALSE,
+    reason VARCHAR(255),
+    assets BYTEA,
+    owner VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW (),
+    updated_at TIMESTAMP DEFAULT NOW ()
+);

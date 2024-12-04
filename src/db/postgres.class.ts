@@ -43,6 +43,33 @@ export class Postgres {
     }));
   }
 
+  async createTransaction(id: string, owner: string) {
+    await this
+      .sql`INSERT INTO transactions (id, owner) VALUES (${id}, ${owner}) RETURNING id;`;
+    console.log(`Transaction saved:`, id);
+    return id;
+  }
+
+  async updateTransaction(
+    id: string,
+    filed: boolean,
+    assets: Asset[] = [],
+    reason: string = "",
+    failed: boolean = false,
+  ) {
+    const updated = await this
+      .sql`UPDATE transactions SET assets = decode(${this.serialize(assets)}, 'hex'), filed = ${filed}, failed = ${failed}, reason = ${reason}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
+    if (!updated || updated.length === 0) {
+      throw new Error(`Transactions ${id} not updated`);
+    }
+  }
+
+  async findTransaction(id: string) {
+    const tx = await this
+      .sql`SELECT id, owner, encode(assets, 'hex') as assets, filed, failed, reason, created_at, updated_at FROM transactions WHERE id = ${id};`;
+    return tx[0];
+  }
+
   // Update the spent status of a UTXO
   async updateUTXO(
     id: string,
@@ -62,7 +89,7 @@ export class Postgres {
 
     const updated = await sql<
       UTXO[]
-    >`UPDATE utxos SET spent = true, updated_at = NOW() WHERE id = ${id} AND spent = false RETURNING id, spent`;
+    >`UPDATE utxos SET spent = ${spent}, updated_at = NOW() WHERE id = ${id} AND spent = false RETURNING id, spent`;
     if (!updated || updated.length === 0) {
       throw new Error(`UTXO ${id} already spent`);
     }

@@ -4,6 +4,7 @@
     "jsr:@std/assert@1": "1.0.8",
     "jsr:@std/internal@^1.0.5": "1.0.5",
     "npm:cbor-x@1.6.0": "1.6.0",
+    "npm:kafkajs@^2.2.4": "2.2.4",
     "npm:postgres@3.4.5": "3.4.5"
   },
   "jsr": {
@@ -56,6 +57,9 @@
     },
     "detect-libc@2.0.3": {
       "integrity": "sha512-bwy0MGW55bG41VqxxypOsdSdGqLwXPI/focwgTYCFMbdUiBAxLg9CFzG08sz2aqzknwiX7Hkl0bQENjg8iLByw=="
+    },
+    "kafkajs@2.2.4": {
+      "integrity": "sha512-j/YeapB1vfPT2iOIUn/vxdyKEuhuY2PxMBvf5JWux6iSaukAccrMtXEY/Lb7OvavDhOWME589bpLrEdnVHjfjA=="
     },
     "node-gyp-build-optional-packages@5.1.1": {
       "integrity": "sha512-+P72GAjVAbTxjjwUmwjVrqrdZROD4nf8KgpBoDxqXXTiYZZt/ud60dE5yvCSr9lRO8e8yv6kgJIC0K0PfZFVQw==",
@@ -352,6 +356,7 @@
     "dependencies": [
       "jsr:@std/assert@1",
       "npm:cbor-x@1.6.0",
+      "npm:kafkajs@^2.2.4",
       "npm:postgres@3.4.5"
     ]
   }

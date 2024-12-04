@@ -2,6 +2,7 @@
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
     "postgresjs": "npm:postgres@3.4.5",
-    "cbor": "npm:cbor-x@1.6.0"
+    "cbor": "npm:cbor-x@1.6.0",
+    "kafkajs": "npm:kafkajs@^2.2.4"
   }
 }
