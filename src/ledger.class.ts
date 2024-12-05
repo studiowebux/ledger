@@ -4,15 +4,23 @@ import { Postgres } from "./db/postgres.class.ts";
 import type { UTXO, Asset } from "./types.ts";
 import { retryWithBackoff } from "./retry.ts";
 import { generateTxId, replacer } from "./util.ts";
-import { PubSub } from "./kafka.ts";
 
 export class Ledger {
   private db: Postgres;
-  private pubSub: PubSub;
+  private sendMessage: (
+    topic: string,
+    messages: { key: string; value: string }[],
+  ) => Promise<void>;
 
-  constructor(db: Postgres, pubSub: PubSub) {
+  constructor(
+    db: Postgres,
+    sendMessage: (
+      topic: string,
+      messages: { key: string; value: string }[],
+    ) => Promise<void> = async () => {},
+  ) {
     this.db = db;
-    this.pubSub = pubSub;
+    this.sendMessage = sendMessage;
   }
 
   async process(message: string) {
@@ -219,7 +227,7 @@ export class Ledger {
   ): Promise<string> {
     const id = generateTxId();
     await this.db.createTransaction(id, sender);
-    await this.pubSub.sendMessage("transactions", [
+    await this.sendMessage("transactions", [
       {
         key: sender,
         value: JSON.stringify(

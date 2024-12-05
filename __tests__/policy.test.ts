@@ -7,6 +7,7 @@ const db = new Postgres(url);
 
 // Capped and immutable asset
 await db.createPolicy("tcoin");
+await db.createPolicy("coin");
 
 // Resources that can be transform to something else
 await db.createPolicy("gold", false);

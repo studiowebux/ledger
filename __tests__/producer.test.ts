@@ -76,7 +76,9 @@ await pubSub.setupProducer();
 await db.sql`TRUNCATE utxos;`;
 await db.sql`TRUNCATE transactions;`;
 
-const ledger = new Ledger(db, pubSub);
+const ledger = new Ledger(db, (topic, messages) =>
+  pubSub.sendMessage(topic, messages),
+);
 const manager = new LedgerManager(ledger, processor);
 
 await ledger.addFunds("alice", [

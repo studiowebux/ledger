@@ -1,14 +1,14 @@
 // deno run -A __tests__/burn.test.ts
 import { Postgres } from "../src/db/postgres.class.ts";
-import { PubSub } from "../src/kafka.ts";
 import { Ledger } from "../src/ledger.class.ts";
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 
 const db = new Postgres(url);
-const pubSub = new PubSub();
-await pubSub.setupConsumer();
-const ledger = new Ledger(db, pubSub);
+const ledger = new Ledger(db, async () => {});
+
+await db.sql`TRUNCATE utxos;`;
+await db.sql`TRUNCATE transactions;`;
 
 await ledger.addFunds("test_wallet", [
   { amount: BigInt(600), unit: "tcoin" },
@@ -26,6 +26,9 @@ console.table({
   },
 });
 
+await db.createTransaction("test_tx", "test_wallet").catch(() => {
+  //ignore error
+});
 await ledger.processRequest("test_tx", "test_wallet", "test_wallet_1", [
   { unit: "tcoin", amount: BigInt(500) },
 ]);
@@ -41,6 +44,9 @@ console.table({
   },
 });
 
+await db.createTransaction("test_tx_1", "test_wallet").catch(() => {
+  //ignore error
+});
 await ledger.processRequest("test_tx_1", "test_wallet", "test_wallet", [
   { unit: "gold", amount: BigInt(-100) },
 ]);
@@ -58,3 +64,4 @@ console.table({
 });
 
 console.debug("Done.");
+await db.sql.end();

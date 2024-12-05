@@ -13,6 +13,6 @@ processor.AddEvent("BuyItem", BuyItem);
 const db = new Postgres(url);
 const pubSub = new PubSub();
 await pubSub.setupConsumer();
-const ledger = new Ledger(db, pubSub);
+const ledger = new Ledger(db);
 await pubSub.consume((message) => ledger.process(message));
 // will run indefinitely
