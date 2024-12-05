@@ -26,6 +26,7 @@ export class LedgerManager {
       );
       if (metadata) {
         await this.ledger.waitForTransactions([txId]);
+        // Call external hooks (if any)
         await this.processor.process(
           metadata.map((meta) => ({
             ...meta,

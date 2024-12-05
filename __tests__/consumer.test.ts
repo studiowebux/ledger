@@ -1,5 +1,6 @@
 // deno run -A __tests__/consumer.test.ts
 import { Postgres } from "../src/db/postgres.class.ts";
+import { PubSub } from "../src/kafka.ts";
 import { Ledger } from "../src/ledger.class.ts";
 import { BuyItem } from "../src/processors/buy-item.class.ts";
 import { PostTransactionProcessor } from "../src/processors/post-transaction.class.ts";
@@ -10,8 +11,8 @@ const processor = new PostTransactionProcessor();
 processor.AddEvent("BuyItem", BuyItem);
 
 const db = new Postgres(url);
-const ledger = new Ledger(db);
-await ledger.setupConsumer();
-await ledger.process();
-
+const pubSub = new PubSub();
+await pubSub.setupConsumer();
+const ledger = new Ledger(db, pubSub);
+await pubSub.consume((message) => ledger.process(message));
 // will run indefinitely

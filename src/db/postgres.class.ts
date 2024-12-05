@@ -1,15 +1,55 @@
 import postgres from "postgresjs";
-import { Buffer } from "node:buffer";
-import { decode, encode } from "cbor";
 import { RawUTXO, UTXO, type Asset } from "../types.ts";
-
-const debug = undefined; //console.log
+import { parseAssets, serialize } from "../encoder_decoder.ts";
+import { generateUtxoId } from "../util.ts";
 
 export class Postgres {
   public sql: postgres.Sql;
 
   constructor(url: string) {
-    this.sql = postgres(url, { debug });
+    this.sql = postgres(url);
+  }
+
+  async createPolicy(id: string, immutable: boolean = true) {
+    await this
+      .sql`INSERT INTO policies (id, immutable) VALUES (${id}, ${immutable}) RETURNING id;`;
+    console.log(`Policy saved:`, id);
+    return id;
+  }
+
+  async findPolicy(id: string) {
+    const policies = await this
+      .sql`SELECT id, immutable FROM policies WHERE id =${id}`;
+    return policies[0];
+  }
+
+  async createTransaction(id: string, owner: string) {
+    await this
+      .sql`INSERT INTO transactions (id, owner) VALUES (${id}, ${owner}) RETURNING id;`;
+    console.log(`Transaction saved:`, id);
+    return id;
+  }
+
+  async updateTransaction(
+    id: string,
+    filed: boolean,
+    assets: Asset[] = [],
+    reason: string = "",
+    failed: boolean = false,
+    options?: { sql?: postgres.Sql },
+  ) {
+    const sql = options?.sql || this.sql;
+    const updated =
+      await sql`UPDATE transactions SET assets = decode(${serialize(assets)}, 'hex'), filed = ${filed}, failed = ${failed}, reason = ${reason}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
+    if (!updated || updated.length === 0) {
+      throw new Error(`Transactions ${id} not updated`);
+    }
+  }
+
+  async findTransaction(id: string) {
+    const tx = await this
+      .sql`SELECT id, owner, encode(assets, 'hex') as assets, filed, failed, reason, created_at, updated_at FROM transactions WHERE id = ${id};`;
+    return tx[0];
   }
 
   // Find a UTXO by its ID
@@ -39,35 +79,8 @@ export class Postgres {
 
     return utxos.map((utxo: RawUTXO) => ({
       ...utxo,
-      assets: this.parseAssets(utxo.assets),
+      assets: parseAssets(utxo.assets),
     }));
-  }
-
-  async createTransaction(id: string, owner: string) {
-    await this
-      .sql`INSERT INTO transactions (id, owner) VALUES (${id}, ${owner}) RETURNING id;`;
-    console.log(`Transaction saved:`, id);
-    return id;
-  }
-
-  async updateTransaction(
-    id: string,
-    filed: boolean,
-    assets: Asset[] = [],
-    reason: string = "",
-    failed: boolean = false,
-  ) {
-    const updated = await this
-      .sql`UPDATE transactions SET assets = decode(${this.serialize(assets)}, 'hex'), filed = ${filed}, failed = ${failed}, reason = ${reason}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
-    if (!updated || updated.length === 0) {
-      throw new Error(`Transactions ${id} not updated`);
-    }
-  }
-
-  async findTransaction(id: string) {
-    const tx = await this
-      .sql`SELECT id, owner, encode(assets, 'hex') as assets, filed, failed, reason, created_at, updated_at FROM transactions WHERE id = ${id};`;
-    return tx[0];
   }
 
   // Update the spent status of a UTXO
@@ -102,37 +115,10 @@ export class Postgres {
     options?: { sql?: postgres.Sql },
   ): Promise<UTXO> {
     const sql = options?.sql || this.sql;
-    const utxo: UTXO = { id: this.generateId(), assets, owner, spent: false };
+    const utxo: UTXO = { id: generateUtxoId(), assets, owner, spent: false };
 
-    await sql`INSERT INTO utxos (id, assets, owner, spent) VALUES (${utxo.id}, decode(${this.serialize(utxo.assets)}, 'hex'), ${utxo.owner}, ${utxo.spent}) RETURNING id, assets, owner, spent;`;
+    await sql`INSERT INTO utxos (id, assets, owner, spent) VALUES (${utxo.id}, decode(${serialize(utxo.assets)}, 'hex'), ${utxo.owner}, ${utxo.spent}) RETURNING id, assets, owner, spent;`;
     console.log(`UTXO created:`, utxo.id);
     return utxo;
-  }
-
-  // Generate a unique ID for a UTXO
-  private generateId(): string {
-    return crypto.randomUUID();
-  }
-
-  private serialize(input: object): string {
-    const cbor = encode(
-      JSON.stringify(input, (_, value) =>
-        typeof value === "bigint" ? Number(value) : value,
-      ),
-    ).toString("hex");
-
-    return cbor;
-  }
-
-  private deserialize<T>(input: string): T {
-    const cbor = decode(Buffer.from(input, "hex"));
-    return cbor;
-  }
-
-  private parseAssets(assets: string): Asset[] {
-    return JSON.parse(this.deserialize<string>(assets)).map((asset: Asset) => ({
-      ...asset,
-      amount: BigInt(asset.amount),
-    }));
   }
 }

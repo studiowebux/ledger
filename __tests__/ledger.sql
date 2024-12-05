@@ -17,3 +17,24 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMP DEFAULT NOW (),
     updated_at TIMESTAMP DEFAULT NOW ()
 );
+
+CREATE TABLE IF NOT EXISTS policies (
+    id VARCHAR(255) PRIMARY KEY,
+    immutable BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW (),
+    updated_at TIMESTAMP DEFAULT NOW ()
+);
+
+select
+    count(*)
+from
+    transactions
+where
+    filed = true;
+
+select
+    count(*)
+from
+    transactions
+where
+    failed = true;

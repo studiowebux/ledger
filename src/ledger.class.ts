@@ -1,113 +1,45 @@
 import type postgres from "postgresjs";
-import type { Admin, Consumer, Producer } from "kafkajs";
+
 import { Postgres } from "./db/postgres.class.ts";
 import type { UTXO, Asset } from "./types.ts";
 import { retryWithBackoff } from "./retry.ts";
-import { kafkaAdmin, kafkaConsumer, kafkaProducer } from "./kafka.ts";
-
-export const replacer = (_key: unknown, value: unknown) =>
-  typeof value === "bigint" ? value.toString() : value;
-
-function generateTxId(): string {
-  return Math.random().toString(36).substring(2, 9);
-}
+import { generateTxId, replacer } from "./util.ts";
+import { PubSub } from "./kafka.ts";
 
 export class Ledger {
   private db: Postgres;
-  private producer: Producer;
-  private consumer: Consumer;
-  private admin: Admin;
+  private pubSub: PubSub;
 
-  constructor(db: Postgres) {
+  constructor(db: Postgres, pubSub: PubSub) {
     this.db = db;
-    this.producer = kafkaProducer.producer({ allowAutoTopicCreation: true });
-    this.consumer = kafkaConsumer.consumer({ groupId: "ledger" });
-    this.admin = kafkaAdmin.admin();
-
-    this.producer.on("producer.connect", () => {
-      console.log("Kafka Producer connected");
-    });
-
-    this.producer.on("producer.disconnect", () => {
-      console.log("Kafka Producer disconnected");
-    });
-
-    this.consumer.on("consumer.connect", () => {
-      console.log("Kafka Consumer connected");
-    });
+    this.pubSub = pubSub;
   }
 
-  async close() {
-    await this.admin.disconnect();
-    await this.producer.disconnect();
-    await this.consumer.disconnect();
-  }
-
-  async setupProducer() {
+  async process(message: string) {
+    const { id, sender, recipient, assetsToSend } = JSON.parse(message);
+    const assets = assetsToSend.map((asset: Asset) => ({
+      ...asset,
+      amount: BigInt(asset.amount),
+    }));
     try {
-      await this.admin.connect();
-      await this.producer.connect();
-    } catch (e) {
-      console.error("Producer error", e);
-    }
-    return this;
-  }
+      const tx = await this.db.findTransaction(id);
 
-  async setupConsumer() {
-    try {
-      await this.consumer.connect();
-      await this.consumer.subscribe({
-        // topics: [/wallet-.*/i],
-        topics: ["transactions"],
-        fromBeginning: true,
-      });
+      if (!tx) {
+        console.log(
+          `Ignoring transaction ${id} has it does not exists in the database`,
+        );
+        return;
+      }
+      await this.processRequest(id, sender, recipient, assets);
     } catch (e) {
-      console.log("Consumer Error: ", e);
-    }
-    return this;
-  }
-
-  async process() {
-    try {
-      await this.consumer.run({
-        eachMessage: async ({
-          _topic,
-          _partition,
-          message,
-          _heartbeat,
-          _pause,
-        }) => {
-          const txId = message?.key?.toString();
-
-          if (!txId) {
-            throw new Error("No transaction id received");
-          }
-          if (!message?.value?.toString()) {
-            throw new Error("No payload received");
-          }
-          const { sender, recipient, assetsToSend } = JSON.parse(
-            message?.value?.toString(),
-          );
-          const assets = assetsToSend.map((asset: Asset) => ({
-            ...asset,
-            amount: BigInt(asset.amount),
-          }));
-          try {
-            await this.processRequest(txId, sender, recipient, assets);
-          } catch (e) {
-            console.error(e);
-            await this.db.updateTransaction(
-              txId,
-              true,
-              assets,
-              (e as Error).message,
-              true,
-            );
-          }
-        },
-      });
-    } catch (e) {
-      console.log("Consumer Run Error: ", e);
+      console.error("Process terminated with an error, ", (e as Error).message);
+      await this.db.updateTransaction(
+        id,
+        true,
+        assets,
+        (e as Error).message,
+        true,
+      );
     }
   }
 
@@ -142,23 +74,36 @@ export class Ledger {
     recipient: string,
     assetsToSend: Asset[],
   ) {
+    if (!sender || sender === "") {
+      throw new Error("Missing sender");
+    }
+    if (!recipient || recipient === "") {
+      throw new Error("Missing recipient");
+    }
+    if (!assetsToSend || assetsToSend.length === 0) {
+      throw new Error("No assets to send");
+    }
     await retryWithBackoff(
       async () => {
         try {
-          const tx = await this.db.findTransaction(txId);
+          const isNegativeValue = assetsToSend.some(
+            (asset) => asset.amount > 0,
+          );
 
-          if (!tx) {
-            console.log(
-              `Ignoring transaction ${txId} has it does not exists in the database`,
-            );
-            return;
+          if (!isNegativeValue) {
+            for (const asset of assetsToSend.filter(
+              (asset) => asset.amount < 0,
+            )) {
+              const policy = await this.db.findPolicy(asset.unit);
+              if (policy.immutable) {
+                throw new Error(
+                  `The amount for ${asset.unit} must be higher than 0`,
+                );
+              }
+            }
           }
-          const isValid = assetsToSend.every((asset) => asset.amount > 0);
 
-          if (!isValid) {
-            throw new Error("The amount must be higher than 0");
-          }
-
+          // buggy but partially works
           try {
             await this.db.sql.begin(async (sql: postgres.Sql) => {
               const senderUtxos = await this.db.findUTXOFor(sender, { sql });
@@ -172,8 +117,11 @@ export class Ledger {
                     (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
                 }
                 usedUtxos.push(utxo);
-                const isFulfilled = assetsToSend.every(
-                  (asset) => collectedAssets[asset.unit] >= asset.amount,
+                const isFulfilled = assetsToSend.every((asset) =>
+                  asset.amount >= 0
+                    ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
+                    : (collectedAssets[asset.unit] || BigInt(0)) >=
+                      BigInt(-1) * asset.amount,
                 );
                 if (isFulfilled) {
                   break;
@@ -181,11 +129,16 @@ export class Ledger {
               }
 
               // Check if we have all required assets
-              const hasEnough = assetsToSend.every(
-                (asset) => (collectedAssets[asset.unit] || 0) >= asset.amount,
+              const hasEnough = assetsToSend.every((asset) =>
+                asset.amount >= 0
+                  ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
+                  : (collectedAssets[asset.unit] || BigInt(0)) >=
+                    BigInt(-1) * asset.amount,
               );
               if (!hasEnough) {
-                throw new Error("Insufficient assets");
+                throw new Error(
+                  `Insufficient assets (${JSON.stringify(assetsToSend, replacer)}) for transaction ${txId}`,
+                );
               }
 
               // Spend UTXOs
@@ -194,30 +147,51 @@ export class Ledger {
               }
 
               // Create new UTXO for the recipient
-              await this.db.createUTXO(recipient, assetsToSend, { sql });
+              const recipientAssets = assetsToSend.filter(
+                (asset) => asset.amount > 0,
+              );
+              if (recipientAssets.length > 0) {
+                await this.db.createUTXO(recipient, recipientAssets, { sql });
+              }
 
-              // Handle change: return unused assets to the sender
+              // Handle change: return unused assets to the sender, excluding burned assets
               const remainingAssets: Asset[] = [];
+
               for (const [unit, amount] of Object.entries(collectedAssets)) {
                 const requiredAmount =
                   assetsToSend.find((asset) => asset.unit === unit)?.amount ||
                   BigInt(0);
+
                 if (amount > requiredAmount) {
-                  remainingAssets.push({
-                    unit,
-                    amount: amount - requiredAmount,
-                  });
+                  // Calculate the remaining amount after sending or burning
+                  const remainingAmount =
+                    requiredAmount >= 0
+                      ? amount - requiredAmount // Sending positive amounts
+                      : amount + requiredAmount; // Burning negative amounts
+
+                  if (remainingAmount > 0) {
+                    remainingAssets.push({ unit, amount: remainingAmount });
+                  }
                 }
               }
+
               if (remainingAssets.length > 0) {
                 await this.db.createUTXO(sender, remainingAssets, { sql });
               }
 
-              await this.db.updateTransaction(txId, true);
-              console.log(`Transaction processed successfully!`);
+              // Update transaction to mark it as processed
+              await this.db.updateTransaction(
+                txId,
+                true,
+                assetsToSend,
+                "",
+                false,
+                { sql },
+              );
+              console.log(`Transaction ${txId} processed successfully!`);
             });
           } catch (e) {
-            console.error("Transaction Failed", (e as Error).message);
+            console.error(`Transaction ${txId} Failed,`, (e as Error).message);
             throw e;
           }
         } catch (error) {
@@ -229,9 +203,9 @@ export class Ledger {
         }
       },
       {
-        retries: 5,
-        delay: 250, // Start with 250ms
-        factor: 1.25, // Exponential backoff multiplier
+        retries: 3,
+        delay: 50, // Start with 50ms
+        factor: 1.5, // Exponential backoff multiplier
         onRetry: (attempt, error) =>
           console.log(`Retry attempt ${attempt}: ${error}`),
       },
@@ -245,38 +219,17 @@ export class Ledger {
   ): Promise<string> {
     const id = generateTxId();
     await this.db.createTransaction(id, sender);
-    await retryWithBackoff(
-      async () => {
-        // const topic = `wallet-${sender}`;
-        const topic = "transactions";
-        await this.admin.createTopics({
-          topics: [{ topic }],
-          waitForLeaders: true,
-        });
-        await this.producer.send({
-          topic,
-          messages: [
-            {
-              key: id,
-              value: JSON.stringify(
-                { sender, recipient, assetsToSend },
-                replacer,
-              ),
-            },
-          ],
-          timeout: 30000,
-        });
-
-        console.log(`Transaction ${id} sent to the queue`);
-      },
+    await this.pubSub.sendMessage("transactions", [
       {
-        retries: 5,
-        delay: 50, // Start with 250ms
-        factor: 1.5, // Exponential backoff multiplier
-        onRetry: (attempt, error) =>
-          console.log(`Retry attempt ${attempt}: ${error}`),
+        key: sender,
+        value: JSON.stringify(
+          { id, sender, recipient, assetsToSend },
+          replacer,
+        ),
       },
-    );
+    ]);
+
+    console.log(`Transaction ${id} sent to the queue`);
 
     return id;
   }
