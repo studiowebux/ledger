@@ -59,7 +59,7 @@ export class PubSub {
     try {
       await this.consumer.connect();
       await this.consumer.subscribe({
-        topics: ["transactions"],
+        topics: ["transactions", "contracts"],
         fromBeginning: true,
       });
     } catch (e) {

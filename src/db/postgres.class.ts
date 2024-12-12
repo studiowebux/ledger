@@ -1,5 +1,5 @@
 import postgres from "postgresjs";
-import { RawUTXO, UTXO, type Asset } from "../types.ts";
+import type { RawUTXO, UTXO, Asset, Transaction } from "../types.ts";
 import { parseAssets, serialize } from "../encoder_decoder.ts";
 import { generateUtxoId } from "../util.ts";
 
@@ -8,6 +8,42 @@ export class Postgres {
 
   constructor(url: string) {
     this.sql = postgres(url);
+  }
+
+  async createContract(
+    id: string,
+    inputs: Asset[],
+    outputs: Asset[],
+    owner: string,
+  ) {
+    await this
+      .sql`INSERT INTO contracts (id, inputs, outputs, owner) VALUES (${id}, decode(${serialize(inputs)}, 'hex'), decode(${serialize(outputs)}, 'hex'), ${owner}) RETURNING id;`;
+    console.log(`Contract saved:`, id);
+    return id;
+  }
+
+  async findContract(id: string, options?: { sql?: postgres.Sql }) {
+    const sql = options?.sql || this.sql;
+    const contracts =
+      await sql`SELECT id, encode(inputs, 'hex') as inputs, encode(outputs, 'hex') as outputs, owner, executed FROM contracts WHERE id =${id}`;
+    return {
+      ...contracts[0],
+      inputs: parseAssets(contracts[0].inputs),
+      outputs: parseAssets(contracts[0].outputs),
+    };
+  }
+
+  async updateContract(
+    id: string,
+    executed: boolean,
+    options?: { sql?: postgres.Sql },
+  ) {
+    const sql = options?.sql || this.sql;
+    const updated =
+      await sql`UPDATE contracts SET executed = ${executed}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
+    if (!updated || updated.length === 0) {
+      throw new Error(`Contract ${id} not updated`);
+    }
   }
 
   async createPolicy(id: string, immutable: boolean = true) {
@@ -23,9 +59,13 @@ export class Postgres {
     return policies[0];
   }
 
-  async createTransaction(id: string, owner: string) {
+  async createTransaction(
+    id: string,
+    owner: string,
+    type: "exchange" | "contract",
+  ) {
     await this
-      .sql`INSERT INTO transactions (id, owner) VALUES (${id}, ${owner}) RETURNING id;`;
+      .sql`INSERT INTO transactions (id, owner, type) VALUES (${id}, ${owner}, ${type}) RETURNING id;`;
     console.log(`Transaction saved:`, id);
     return id;
   }
@@ -46,10 +86,10 @@ export class Postgres {
     }
   }
 
-  async findTransaction(id: string) {
+  async findTransaction(id: string): Promise<Transaction> {
     const tx = await this
-      .sql`SELECT id, owner, encode(assets, 'hex') as assets, filed, failed, reason, created_at, updated_at FROM transactions WHERE id = ${id};`;
-    return tx[0];
+      .sql`SELECT id, owner, encode(assets, 'hex') as assets, filed, failed, reason, type, created_at, updated_at FROM transactions WHERE id = ${id};`;
+    return tx[0] as Transaction;
   }
 
   // Find a UTXO by its ID

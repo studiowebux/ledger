@@ -81,16 +81,16 @@ const ledger = new Ledger(db, (topic, messages) =>
 );
 const manager = new LedgerManager(ledger, processor);
 
-await ledger.addFunds("alice", [
+await ledger.addAssets("alice", [
   { amount: BigInt(1000), unit: "gold" },
   { amount: BigInt(777), unit: "silver" },
   { amount: BigInt(10_000), unit: "coin" },
 ]);
 await printBalance(ledger);
 
-await ledger.addFunds("alice", [{ amount: BigInt(1230), unit: "gold" }]);
-await ledger.addFunds("ron", [{ amount: BigInt(5550), unit: "gold" }]);
-await ledger.addFunds("bob", [{ amount: BigInt(345), unit: "gold" }]);
+await ledger.addAssets("alice", [{ amount: BigInt(1230), unit: "gold" }]);
+await ledger.addAssets("ron", [{ amount: BigInt(5550), unit: "gold" }]);
+await ledger.addAssets("bob", [{ amount: BigInt(345), unit: "gold" }]);
 await printBalance(ledger);
 
 const txId = await ledger.addRequest("alice", "bob", [
@@ -129,7 +129,7 @@ const txId2 = await manager.transferFunds(
 await ledger.waitForTransactions([txId2]);
 await printBalance(ledger);
 
-await ledger.addFunds("ron", [
+await ledger.addAssets("ron", [
   { unit: "coin", amount: BigInt(3_333_666_666_999_999) },
 ]);
 await printBalance(ledger);

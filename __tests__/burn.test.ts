@@ -10,7 +10,7 @@ const ledger = new Ledger(db, async () => {});
 await db.sql`TRUNCATE utxos;`;
 await db.sql`TRUNCATE transactions;`;
 
-await ledger.addFunds("test_wallet", [
+await ledger.addAssets("test_wallet", [
   { amount: BigInt(600), unit: "tcoin" },
   { amount: BigInt(100), unit: "gold" },
 ]);
@@ -26,7 +26,7 @@ console.table({
   },
 });
 
-await db.createTransaction("test_tx", "test_wallet").catch(() => {
+await db.createTransaction("test_tx", "test_wallet", "exchange").catch(() => {
   //ignore error
 });
 await ledger.processRequest("test_tx", "test_wallet", "test_wallet_1", [
@@ -44,7 +44,7 @@ console.table({
   },
 });
 
-await db.createTransaction("test_tx_1", "test_wallet").catch(() => {
+await db.createTransaction("test_tx_1", "test_wallet", "exchange").catch(() => {
   //ignore error
 });
 await ledger.processRequest("test_tx_1", "test_wallet", "test_wallet", [

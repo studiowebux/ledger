@@ -25,3 +25,23 @@ export type Metadata = {
   action: "BuyItem";
   itemId?: string;
 };
+
+export type Contract = {
+  id?: string;
+  outputs: Asset[]; // listed asset(s) for selling
+  inputs: Asset[]; // input(s) required to unlock the ouput
+  owner?: string;
+  executed?: boolean;
+};
+
+export type Transaction = {
+  id: string;
+  owner: string;
+  assets: string;
+  filed: boolean;
+  failed: boolean;
+  reason: string;
+  type: "exchange" | "contract";
+  created_at: string;
+  updated_at: string;
+};
