@@ -4,44 +4,60 @@ export type Asset = {
   amount: bigint;
 };
 
-export type UTXO = {
+export type Utxo = {
   id: string;
   assets: Asset[];
   owner: string;
   spent: boolean;
 };
 
-export type RawUTXO = {
-  id: string;
-  assets: string; // cbor encoded
-  owner: string;
-  spent: boolean;
-};
-
-// Metadata to interact with the processors
-export type Metadata = {
-  sender?: string;
-  recipient?: string;
-  action: "BuyItem";
-  itemId?: string;
+export type UtxoRaw = Utxo & {
+  assets: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Contract = {
-  id?: string;
+  id: string;
   outputs: Asset[]; // listed asset(s) for selling
   inputs: Asset[]; // input(s) required to unlock the ouput
-  owner?: string;
-  executed?: boolean;
+  owner: string;
+  executed: boolean;
+};
+
+export type ContractRaw = Contract & {
+  outputs: string;
+  inputs: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Policy = {
+  unit: Unit;
+  immutable: boolean;
+};
+
+export type PolicyRaw = Policy & {
+  created_at: string;
+  updated_at: string;
 };
 
 export type Transaction = {
   id: string;
   owner: string;
-  assets: string;
+  assets: Asset[];
   filed: boolean;
   failed: boolean;
   reason: string;
   type: "exchange" | "contract";
+};
+
+export type TransactionRaw = Transaction & {
+  assets: string;
   created_at: string;
   updated_at: string;
+};
+
+export type Id = {
+  id: string;
 };

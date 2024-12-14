@@ -1,14 +1,11 @@
 import type postgres from "postgresjs";
-import type { Postgres } from "./db/postgres.class.ts";
-import type { UTXO, Asset, Contract } from "./types.ts";
+import Logger from "@studiowebux/deno-minilog";
 
+import type { Postgres } from "./db/postgres.class.ts";
+import type { Asset, Contract, Unit, Utxo } from "./types.ts";
 import { retryWithBackoff } from "./retry.ts";
-import {
-  aggregateAssets,
-  generateContractId,
-  generateTxId,
-  replacer,
-} from "./util.ts";
+import { generateContractId, generateTxId, generateUtxoId } from "./util.ts";
+import { parseAssets, stringify, aggregateAssets } from "./encoder_decoder.ts";
 
 export class Ledger {
   private db: Postgres;
@@ -16,6 +13,7 @@ export class Ledger {
     topic: string,
     messages: { key: string; value: string }[],
   ) => Promise<void>;
+  private logger: Logger;
 
   constructor(options: {
     db: Postgres;
@@ -23,20 +21,23 @@ export class Ledger {
       topic: string,
       messages: { key: string; value: string }[],
     ) => Promise<void>;
+    logger: Logger;
   }) {
     this.db = options.db;
     this.sendMessage = options.sendMessage || (async () => {});
+    this.logger = options.logger.fork("ledger");
   }
 
-  async process(message: string) {
-    const { id, sender, recipient, assetsToSend, contract } =
+  async process(message: string): Promise<void> {
+    this.logger.verbose("process", message);
+    const { id, sender, recipient, assetsToSend, contractId } =
       JSON.parse(message);
     let assets = [];
     try {
       const tx = await this.db.findTransaction(id);
 
       if (!tx) {
-        console.log(
+        this.logger.warn(
           `Ignoring transaction ${id} has it does not exists in the database`,
         );
         return;
@@ -48,13 +49,15 @@ export class Ledger {
         }));
         await this.processRequest(id, sender, recipient, assets);
       } else if (tx.type === "contract") {
-        console.log("Contract", contract);
-        throw new Error("TODO Not implemented");
+        await this.processContract(id, sender, contractId);
       } else {
-        throw new Error("Invalid transaction provided");
+        throw new Error("Invalid transaction type provided");
       }
     } catch (e) {
-      console.error("Process terminated with an error, ", (e as Error).message);
+      this.logger.error(
+        "Process terminated with an error, ",
+        (e as Error).message,
+      );
       await this.db.updateTransaction(
         id,
         true,
@@ -65,20 +68,31 @@ export class Ledger {
     }
   }
 
-  async addAssets(walletId: string, assets: Asset[]): Promise<UTXO> {
+  async addAssets(walletId: string, assets: Asset[]): Promise<string> {
+    this.logger.verbose("addAssets", walletId, assets);
     try {
-      const utxo = await this.db.createUTXO(walletId, assets);
-      console.log("Funds added with success", utxo.id);
-      return utxo;
+      const utxoId = await this.db.createUTXO(walletId, {
+        id: generateUtxoId(),
+        assets,
+        owner: walletId,
+        spent: false,
+      });
+      this.logger.info("Funds added with success", utxoId);
+      return utxoId;
     } catch (e) {
-      console.error("Add funds failed", (e as Error).message);
+      this.logger.error("Add funds failed", (e as Error).message);
       throw e;
     }
   }
 
-  async getBalance(walletId: string): Promise<Record<string, bigint>> {
+  async getBalance(walletId: string): Promise<Record<Unit, bigint>> {
+    this.logger.verbose("getBalance", walletId);
     const utxos = await this.db.findUTXOFor(walletId);
-    return utxos.reduce((balance: Record<string, bigint>, utxo) => {
+    const parsedUtxos = utxos.map((utxo) => ({
+      ...utxo,
+      assets: parseAssets(utxo.assets),
+    }));
+    return parsedUtxos.reduce((balance: Record<Unit, bigint>, utxo) => {
       for (const asset of utxo.assets) {
         balance[asset.unit] = (balance[asset.unit] || BigInt(0)) + asset.amount;
       }
@@ -86,11 +100,18 @@ export class Ledger {
     }, {});
   }
 
-  async getUtxos(walletId: string): Promise<UTXO[]> {
-    return await this.db.findUTXOFor(walletId);
+  async getUtxos(walletId: string): Promise<Utxo[]> {
+    this.logger.verbose("getUtxos", walletId);
+    const utxos = await this.db.findUTXOFor(walletId);
+    return utxos.map((utxo) => ({ ...utxo, assets: parseAssets(utxo.assets) }));
   }
 
-  async processContract(txId: string, buyer: string, contractId: string) {
+  async processContract(
+    txId: string,
+    buyer: string,
+    contractId: string,
+  ): Promise<void> {
+    this.logger.verbose("processContract", txId, buyer, contractId);
     if (!buyer || buyer === "") {
       throw new Error("Missing buyer");
     }
@@ -102,20 +123,14 @@ export class Ledger {
         try {
           await this.db.sql.begin(async (sql: postgres.Sql) => {
             const contract = await this.db.findContract(contractId, { sql });
-            console.log(
-              txId,
-              contract.owner,
-              aggregateAssets(contract.inputs),
-              aggregateAssets(contract.outputs),
-              buyer,
-            );
             try {
               if (buyer !== contract.owner) {
+                this.logger.verbose(`Executing Contract #${contractId}`);
                 // Send assets to sender
                 await this.exchange(
                   buyer,
                   contractId,
-                  aggregateAssets(contract.inputs),
+                  aggregateAssets(parseAssets(contract.inputs)),
                   { sql },
                 );
               }
@@ -123,7 +138,7 @@ export class Ledger {
               await this.exchange(
                 contractId,
                 buyer,
-                aggregateAssets(contract.outputs),
+                aggregateAssets(parseAssets(contract.outputs)),
                 { sql },
               );
               await this.db.updateContract(contractId, true, {
@@ -133,14 +148,20 @@ export class Ledger {
               await this.db.updateTransaction(txId, true, [], "", false, {
                 sql,
               });
-              console.log(`Contract ${txId} processed successfully!`);
+              this.logger.info(`Contract ${txId} processed successfully!`);
             } catch (e) {
-              console.error(`Contract ${txId} Failed,`, (e as Error).message);
+              this.logger.error(
+                `Contract ${txId} Failed,`,
+                (e as Error).message,
+              );
               throw e;
             }
           });
         } catch (error) {
-          console.error("Error processing contract:", (error as Error).message);
+          this.logger.error(
+            "Error processing contract:",
+            (error as Error).message,
+          );
           throw error;
         }
       },
@@ -149,7 +170,7 @@ export class Ledger {
         delay: 50, // Start with 50ms
         factor: 1.5, // Exponential backoff multiplier
         onRetry: (attempt, error) =>
-          console.log(`Retry attempt ${attempt}: ${error}`),
+          this.logger.warn(`Retry attempt ${attempt}: ${error}`),
       },
     );
   }
@@ -159,7 +180,8 @@ export class Ledger {
     recipient: string,
     assetsToSend: Asset[],
     options: { sql?: postgres.Sql },
-  ) {
+  ): Promise<void> {
+    this.logger.verbose("exchange", sender, recipient, assetsToSend);
     const sql = options?.sql || this.db.sql;
     if (!sender || sender === "") {
       throw new Error("Missing sender");
@@ -194,11 +216,15 @@ export class Ledger {
           // buggy but partially works
           // await this.db.sql.begin(async (sql: postgres.Sql) => {
           const senderUtxos = await this.db.findUTXOFor(sender, { sql });
+          const parsedSenderUtxos: Utxo[] = senderUtxos.map((utxo) => ({
+            ...utxo,
+            assets: parseAssets(utxo.assets),
+          }));
           const collectedAssets: { [id: string]: bigint } = {};
-          const usedUtxos: UTXO[] = [];
+          const usedUtxos: Utxo[] = [];
 
           // Collect UTXOs until we have enough assets
-          for (const utxo of senderUtxos) {
+          for (const utxo of parsedSenderUtxos) {
             for (const asset of utxo.assets) {
               collectedAssets[asset.unit] =
                 (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
@@ -223,9 +249,7 @@ export class Ledger {
                 BigInt(-1) * asset.amount,
           );
           if (!hasEnough) {
-            throw new Error(
-              `Insufficient assets (${JSON.stringify(assetsToSend, replacer)})`,
-            );
+            throw new Error(`Insufficient assets (${stringify(assetsToSend)})`);
           }
 
           // Spend UTXOs
@@ -238,7 +262,16 @@ export class Ledger {
             (asset) => asset.amount > 0,
           );
           if (recipientAssets.length > 0) {
-            await this.db.createUTXO(recipient, recipientAssets, { sql });
+            await this.db.createUTXO(
+              recipient,
+              {
+                id: generateUtxoId(),
+                assets: recipientAssets,
+                owner: recipient,
+                spent: false,
+              },
+              { sql },
+            );
           }
 
           // Handle change: return unused assets to the sender, excluding burned assets
@@ -263,11 +296,19 @@ export class Ledger {
           }
 
           if (remainingAssets.length > 0) {
-            await this.db.createUTXO(sender, remainingAssets, { sql });
+            await this.db.createUTXO(
+              sender,
+              {
+                id: generateUtxoId(),
+                assets: remainingAssets,
+                owner: sender,
+                spent: false,
+              },
+              { sql },
+            );
           }
-          // });
         } catch (error) {
-          console.error(
+          this.logger.error(
             "Error processing transaction:",
             (error as Error).message,
           );
@@ -279,7 +320,7 @@ export class Ledger {
         delay: 50, // Start with 50ms
         factor: 1.5, // Exponential backoff multiplier
         onRetry: (attempt, error) =>
-          console.log(`Retry attempt ${attempt}: ${error}`),
+          this.logger.warn(`Retry attempt ${attempt}: ${error}`),
       },
     );
   }
@@ -296,7 +337,15 @@ export class Ledger {
     sender: string,
     recipient: string,
     assetsToSend: Asset[],
-  ) {
+  ): Promise<void> {
+    this.logger.verbose(
+      "processRequest",
+      txId,
+      sender,
+      recipient,
+      assetsToSend,
+    );
+
     if (!sender || sender === "") {
       throw new Error("Missing sender");
     }
@@ -312,10 +361,10 @@ export class Ledger {
         await this.exchange(sender, recipient, assetsToSend, { sql });
         // Update transaction to mark it as processed
         await this.db.updateTransaction(txId, true, assetsToSend, "", false);
-        console.log(`Transaction ${txId} processed successfully!`);
+        this.logger.info(`Transaction ${txId} processed successfully!`);
       });
     } catch (e) {
-      console.error(`Transaction ${txId} Failed,`, (e as Error).message);
+      this.logger.error(`Transaction ${txId} Failed,`, (e as Error).message);
       throw e;
     }
   }
@@ -332,19 +381,17 @@ export class Ledger {
     recipient: string,
     assetsToSend: Asset[],
   ): Promise<string> {
+    this.logger.verbose("addRequest", sender, recipient, assetsToSend);
     const id = generateTxId();
     await this.db.createTransaction(id, sender, "exchange");
     await this.sendMessage("transactions", [
       {
         key: sender,
-        value: JSON.stringify(
-          { id, sender, recipient, assetsToSend },
-          replacer,
-        ),
+        value: stringify({ id, sender, recipient, assetsToSend }),
       },
     ]);
 
-    console.log(`Transaction ${id} sent to the queue`);
+    this.logger.debug(`Transaction ${id} sent to the queue`);
 
     return id;
   }
@@ -355,28 +402,39 @@ export class Ledger {
    * @param contract
    * @returns
    */
-  async createContract(owner: string, contract: Contract): Promise<string> {
+  async createContract(
+    owner: string,
+    contract: Pick<Contract, "inputs" | "outputs">,
+  ): Promise<string> {
+    this.logger.verbose("createContract", owner, contract);
+
     if (
       contract.inputs.some((input) => input.amount < 0) ||
       contract.outputs.some((output) => output.amount < 0)
     ) {
       throw new Error("Only positive value are allowed for a contract");
     }
+
     const id = generateContractId();
-    const txId = generateTxId();
-    await this.db.createTransaction(txId, owner, "exchange");
+    this.logger.verbose("Create Contract", id);
+
     await this.db.createContract(
       id,
       aggregateAssets(contract.inputs),
       aggregateAssets(contract.outputs),
       owner,
     );
+
+    const txId = generateTxId();
+    this.logger.verbose("Transfer asset(s) from owner to contract");
+    await this.db.createTransaction(txId, owner, "exchange");
     await this.processRequest(
       txId,
       owner,
       id,
       aggregateAssets(contract.outputs),
     );
+
     return id;
   }
 
@@ -387,24 +445,26 @@ export class Ledger {
    * @returns
    */
   async addContract(buyer: string, contractId: string): Promise<string> {
-    const id = generateTxId();
-    const contract = (await this.db.findContract(contractId)) as Contract;
+    this.logger.verbose("addContract", buyer, contractId);
+
+    const txId = generateTxId();
+    const contract = await this.db.findContract(contractId);
     if (!contract || contract.executed === true) {
-      throw new Error("Contract not found or executed");
+      throw new Error("Contract not found or already executed");
     }
-    await this.db.createTransaction(id, buyer, "contract");
+    await this.db.createTransaction(txId, buyer, "contract");
     await this.sendMessage("contracts", [
       {
-        key: contract.owner!, // seller wallet
-        value: JSON.stringify({ id, contract }, replacer),
+        key: contract.owner, // seller wallet
+        value: stringify({ id: txId, contractId: contract.id }),
       },
     ]);
 
-    console.log(
-      `Contract ${contract.id} with transaction ${id} sent to the queue`,
+    this.logger.debug(
+      `Contract ${contract.id} with transaction ${txId} sent to the queue`,
     );
 
-    return id;
+    return txId;
   }
 
   waitForTransactions(
@@ -412,7 +472,7 @@ export class Ledger {
     interval: number = 500,
     timeout: number = 60000,
   ): Promise<void> {
-    console.log("Wait For Transactions to be Filed:", txs.join(","));
+    this.logger.info("Wait For transactions to be filed:", txs.join(","));
     return new Promise((resolve, reject) => {
       const start = Date.now();
 
@@ -427,7 +487,7 @@ export class Ledger {
             }
           }
           if (completed) {
-            console.log("All transactions completed");
+            this.logger.info("All transactions completed");
             return resolve();
           }
           if (Date.now() - start >= timeout) {

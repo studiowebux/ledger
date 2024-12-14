@@ -2,13 +2,17 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { Postgres } from "../src/db/postgres.class.ts";
 import { Ledger } from "../src/ledger.class.ts";
+import Logger from "@studiowebux/deno-minilog";
+import { parseAssets } from "../src/encoder_decoder.ts";
+import { Contract } from "../src/types.ts";
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 
 Deno.test("Test contract interactions", async (t) => {
   let contractId = "";
-  const db = new Postgres(url);
-  const ledger = new Ledger({ db });
+  const logger = new Logger();
+  const db = new Postgres(url, logger);
+  const ledger = new Ledger({ db, logger });
 
   await db.sql`TRUNCATE utxos;`;
   await db.sql`TRUNCATE transactions;`;
@@ -54,6 +58,11 @@ Deno.test("Test contract interactions", async (t) => {
       inputs: [{ unit: "coin", amount: BigInt(10) }],
     });
     const contract = await db.findContract(contractId);
+    const parsedContract: Contract = {
+      ...contract,
+      inputs: parseAssets(contract.inputs),
+      outputs: parseAssets(contract.outputs),
+    };
     assertEquals(
       {
         inputs: [{ unit: "coin", amount: 10n }],
@@ -62,7 +71,7 @@ Deno.test("Test contract interactions", async (t) => {
         owner: "store_1",
         id: contractId,
       },
-      contract,
+      parsedContract,
     );
   });
 
@@ -117,6 +126,11 @@ Deno.test("Test contract interactions", async (t) => {
     });
 
     const contract = await db.findContract(contractId);
+    const parsedContract: Contract = {
+      ...contract,
+      inputs: parseAssets(contract.inputs),
+      outputs: parseAssets(contract.outputs),
+    };
     assertEquals(
       {
         inputs: [{ unit: "coin", amount: 10n }],
@@ -128,7 +142,7 @@ Deno.test("Test contract interactions", async (t) => {
         owner: "store_1",
         id: contractId,
       },
-      contract,
+      parsedContract,
     );
   });
 
@@ -143,6 +157,11 @@ Deno.test("Test contract interactions", async (t) => {
     });
 
     const contract = await db.findContract(contractId);
+    const parsedContract: Contract = {
+      ...contract,
+      inputs: parseAssets(contract.inputs),
+      outputs: parseAssets(contract.outputs),
+    };
     assertEquals(
       {
         inputs: [{ unit: "coin", amount: 10n }],
@@ -151,7 +170,7 @@ Deno.test("Test contract interactions", async (t) => {
         owner: "store_1",
         id: contractId,
       },
-      contract,
+      parsedContract,
     );
   });
 

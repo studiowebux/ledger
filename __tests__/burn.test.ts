@@ -1,13 +1,16 @@
 // deno test -A __tests__/burn.test.ts
 import { assertEquals } from "jsr:@std/assert";
+import Logger from "@studiowebux/deno-minilog";
+
 import { Postgres } from "../src/db/postgres.class.ts";
 import { Ledger } from "../src/ledger.class.ts";
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
+const logger = new Logger({ forkToPrint: [], hideForks: true });
 
 Deno.test("Test contract interactions", async (t) => {
-  const db = new Postgres(url);
-  const ledger = new Ledger({ db });
+  const db = new Postgres(url, logger);
+  const ledger = new Ledger({ db, logger });
 
   await db.sql`TRUNCATE utxos;`;
   await db.sql`TRUNCATE transactions;`;

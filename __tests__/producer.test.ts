@@ -1,4 +1,4 @@
-// deno run -A __tests__/queue.test.ts
+import Logger from "@studiowebux/deno-minilog";
 import { Postgres } from "../src/db/postgres.class.ts";
 import { PubSub } from "../src/kafka.ts";
 import { Ledger } from "../src/ledger.class.ts";
@@ -62,7 +62,8 @@ console.time("1013_txs");
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 
-const db = new Postgres(url);
+const logger = new Logger();
+const db = new Postgres(url, logger);
 const pubSub = new PubSub();
 
 await pubSub.setupProducer();
@@ -73,6 +74,7 @@ await db.sql`TRUNCATE transactions;`;
 const ledger = new Ledger({
   db,
   sendMessage: (topic, messages) => pubSub.sendMessage(topic, messages),
+  logger,
 });
 
 await ledger.addAssets("alice", [
@@ -112,16 +114,6 @@ const txs = await Promise.all(requests1);
 
 await ledger.waitForTransactions(txs);
 await printBalance(ledger);
-
-// const txId2 = await manager.transferFunds(
-//   "alice",
-//   "bob",
-//   [{ unit: "coin", amount: BigInt(5_000) }],
-//   [{ action: "BuyItem", itemId: "car_1" }],
-// );
-
-// await ledger.waitForTransactions([txId2]);
-// await printBalance(ledger);
 
 await ledger.addAssets("ron", [
   { unit: "coin", amount: BigInt(3_333_666_666_999_999) },
