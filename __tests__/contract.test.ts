@@ -1,160 +1,200 @@
-// deno run -A __tests__/contract.test.ts
+// deno test -A __tests__/contract.test.ts
+import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { Postgres } from "../src/db/postgres.class.ts";
 import { Ledger } from "../src/ledger.class.ts";
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 
-const db = new Postgres(url);
-const ledger = new Ledger(db, async () => {});
+Deno.test("Test contract interactions", async (t) => {
+  let contractId = "";
+  const db = new Postgres(url);
+  const ledger = new Ledger({ db });
 
-await db.sql`TRUNCATE utxos;`;
-await db.sql`TRUNCATE transactions;`;
-await db.sql`TRUNCATE contracts;`;
+  await db.sql`TRUNCATE utxos;`;
+  await db.sql`TRUNCATE transactions;`;
+  await db.sql`TRUNCATE contracts;`;
 
-//
-// Setup Assets and wallets
-//
-
-await ledger.addAssets("customer_1", [
-  { amount: BigInt(10), unit: "coin" },
-  { amount: BigInt(1), unit: "iron" },
-]);
-await ledger.addAssets("customer_2", [{ amount: BigInt(20), unit: "coin" }]);
-await ledger.addAssets("store_1", [
-  { amount: BigInt(10), unit: "gold" },
-  { amount: BigInt(1_000_000), unit: "iron" },
-]);
-
-console.table({
-  customer_1: {
-    balance: await ledger.getBalance("customer_1"),
-    utxos: (await ledger.getUtxos("customer_1")).length,
-  },
-  customer_2: {
-    balance: await ledger.getBalance("customer_2"),
-    utxos: (await ledger.getUtxos("customer_2")).length,
-  },
-  store_1: {
-    balance: await ledger.getBalance("store_1"),
-    utxos: (await ledger.getUtxos("store_1")).length,
-  },
-});
-
-// ---
-
-//
-// Setup Contract
-//
-
-const contractId = await ledger.createContract("store_1", {
-  outputs: [{ unit: "gold", amount: BigInt(1) }],
-  inputs: [{ unit: "coin", amount: BigInt(10) }],
-});
-
-console.log("Contract ID", contractId);
-
-console.table({
-  customer_1: {
-    balance: await ledger.getBalance("customer_1"),
-    utxos: (await ledger.getUtxos("customer_1")).length,
-  },
-  customer_2: {
-    balance: await ledger.getBalance("customer_2"),
-    utxos: (await ledger.getUtxos("customer_2")).length,
-  },
-  store_1: {
-    balance: await ledger.getBalance("store_1"),
-    utxos: (await ledger.getUtxos("store_1")).length,
-  },
-  [contractId]: {
-    balance: await ledger.getBalance(contractId),
-    utxos: (await ledger.getUtxos(contractId)).length,
-  },
-});
-
-//
-// Execute contract
-//
-
-const txId = await db
-  .createTransaction("test_buy_gold", "customer_1", "contract")
-  .catch(() => {
-    //ignore error
+  await t.step("Add Initial Assets", async () => {
+    await ledger.addAssets("customer_1", [
+      { amount: BigInt(10), unit: "coin" },
+      { amount: BigInt(1), unit: "iron" },
+    ]);
+    assertEquals(
+      {
+        coin: 10n,
+        iron: 1n,
+      },
+      await ledger.getBalance("customer_1"),
+    );
+    await ledger.addAssets("customer_2", [
+      { amount: BigInt(20), unit: "coin" },
+    ]);
+    assertEquals(
+      {
+        coin: 20n,
+      },
+      await ledger.getBalance("customer_2"),
+    );
+    await ledger.addAssets("store_1", [
+      { amount: BigInt(10), unit: "gold" },
+      { amount: BigInt(1_000_000), unit: "iron" },
+    ]);
+    assertEquals(
+      {
+        iron: 1_000_000n,
+        gold: 10n,
+      },
+      await ledger.getBalance("store_1"),
+    );
   });
-await ledger.processContract(txId!, "customer_1", contractId);
 
-console.table({
-  customer_1: {
-    balance: await ledger.getBalance("customer_1"),
-    utxos: (await ledger.getUtxos("customer_1")).length,
-  },
-  customer_2: {
-    balance: await ledger.getBalance("customer_2"),
-    utxos: (await ledger.getUtxos("customer_2")).length,
-  },
-  store_1: {
-    balance: await ledger.getBalance("store_1"),
-    utxos: (await ledger.getUtxos("store_1")).length,
-  },
-  [contractId]: {
-    balance: await ledger.getBalance(contractId),
-    utxos: (await ledger.getUtxos(contractId)).length,
-  },
+  await t.step("Create contract", async () => {
+    contractId = await ledger.createContract("store_1", {
+      outputs: [{ unit: "gold", amount: BigInt(1) }],
+      inputs: [{ unit: "coin", amount: BigInt(10) }],
+    });
+    const contract = await db.findContract(contractId);
+    assertEquals(
+      {
+        inputs: [{ unit: "coin", amount: 10n }],
+        outputs: [{ unit: "gold", amount: 1n }],
+        executed: false,
+        owner: "store_1",
+        id: contractId,
+      },
+      contract,
+    );
+  });
+
+  await t.step("Process contract", async () => {
+    const txId = await db
+      .createTransaction("test_buy_gold", "customer_1", "contract")
+      .catch(() => {
+        //ignore error
+      });
+    await ledger.processContract(txId!, "customer_1", contractId);
+    assertEquals(
+      {
+        gold: 1n,
+        iron: 1n,
+      },
+      await ledger.getBalance("customer_1"),
+    );
+    assertEquals(
+      {
+        gold: 9n,
+        iron: 1_000_000n,
+      },
+      await ledger.getBalance("store_1"),
+    );
+  });
+
+  await t.step("Error handling contract creation negative value", () => {
+    assertRejects(async () => {
+      await ledger.createContract("store_1", {
+        outputs: [{ unit: "gold", amount: BigInt(-1) }],
+        inputs: [{ unit: "coin", amount: BigInt(10) }],
+      });
+    });
+  });
+
+  await t.step("Error handling contract creation too many resource", () => {
+    assertRejects(async () => {
+      await ledger.createContract("store_1", {
+        outputs: [{ unit: "gold", amount: BigInt(20) }],
+        inputs: [{ unit: "coin", amount: BigInt(10) }],
+      });
+    });
+  });
+
+  await t.step("Create another contract", async () => {
+    const contractId = await ledger.createContract("store_1", {
+      outputs: [
+        { unit: "gold", amount: BigInt(1) },
+        { unit: "iron", amount: BigInt(100) },
+      ],
+      inputs: [{ unit: "coin", amount: BigInt(10) }],
+    });
+
+    const contract = await db.findContract(contractId);
+    assertEquals(
+      {
+        inputs: [{ unit: "coin", amount: 10n }],
+        outputs: [
+          { unit: "gold", amount: 1n },
+          { unit: "iron", amount: 100n },
+        ],
+        executed: false,
+        owner: "store_1",
+        id: contractId,
+      },
+      contract,
+    );
+  });
+
+  await t.step("Adding separated resource", async () => {
+    const contractId = await ledger.createContract("store_1", {
+      outputs: [
+        { unit: "gold", amount: BigInt(1) },
+        { unit: "gold", amount: BigInt(1) },
+        { unit: "gold", amount: BigInt(1) },
+      ],
+      inputs: [{ unit: "coin", amount: BigInt(10) }],
+    });
+
+    const contract = await db.findContract(contractId);
+    assertEquals(
+      {
+        inputs: [{ unit: "coin", amount: 10n }],
+        outputs: [{ unit: "gold", amount: 3n }],
+        executed: false,
+        owner: "store_1",
+        id: contractId,
+      },
+      contract,
+    );
+  });
+
+  await t.step("Cancel Contract", async () => {
+    assertEquals(
+      {
+        gold: 5n,
+        iron: 999_900n,
+      },
+      await ledger.getBalance("store_1"),
+    );
+    const contractId = await ledger.createContract("store_1", {
+      outputs: [
+        { unit: "gold", amount: BigInt(1) },
+        { unit: "gold", amount: BigInt(1) },
+        { unit: "gold", amount: BigInt(1) },
+      ],
+      inputs: [{ unit: "coin", amount: BigInt(10) }],
+    });
+    assertEquals(
+      {
+        gold: 2n,
+        iron: 999_900n,
+      },
+      await ledger.getBalance("store_1"),
+    );
+
+    const txId = await db
+      .createTransaction("cancel_contract", "store_1", "contract")
+      .catch(() => {
+        //ignore error
+      });
+    await ledger.processContract(txId!, "store_1", contractId);
+    assertEquals(
+      {
+        gold: 5n,
+        iron: 999_900n,
+      },
+      await ledger.getBalance("store_1"),
+    );
+  });
+
+  await t.step("Cleanup", async () => {
+    await db.sql.end();
+  });
 });
-
-// Not allowed.
-// const c1 = await ledger.createContract("store_1", {
-//   outputs: [{ unit: "gold", amount: BigInt(-1) }],
-//   inputs: [{ unit: "coin", amount: BigInt(10) }],
-// });
-
-// FIXME: this is a hack, we need a step that regroup to avoid skipping
-// const c2 = await ledger.createContract("store_1", {
-//   outputs: [
-//     { unit: "gold", amount: BigInt(1) },
-//     { unit: "gold", amount: BigInt(1) },
-//     { unit: "gold", amount: BigInt(1) },
-//   ],
-//   inputs: [{ unit: "coin", amount: BigInt(10) }],
-// });
-
-// console.table({
-//   store_1: {
-//     balance: await ledger.getBalance("store_1"),
-//     utxos: (await ledger.getUtxos("store_1")).length,
-//   },
-//   [c2]: {
-//     balance: await ledger.getBalance(c2),
-//     utxos: (await ledger.getUtxos(c2)).length,
-//   },
-// });
-
-// throws error as expected.
-// const c3 = await ledger.createContract("store_1", {
-//   outputs: [{ unit: "gold", amount: BigInt(20) }],
-//   inputs: [{ unit: "coin", amount: BigInt(10) }],
-// });
-
-const c4 = await ledger.createContract("store_1", {
-  outputs: [
-    { unit: "gold", amount: BigInt(1) },
-    { unit: "iron", amount: BigInt(100) },
-  ],
-  inputs: [{ unit: "coin", amount: BigInt(10) }],
-});
-
-console.table({
-  store_1: {
-    balance: await ledger.getBalance("store_1"),
-    utxos: (await ledger.getUtxos("store_1")).length,
-  },
-  [c4]: {
-    balance: await ledger.getBalance(c4),
-    utxos: (await ledger.getUtxos(c4)).length,
-  },
-});
-
-await db.sql.end();
-
-// TODO: write a bunch of tests
-// TODO: cancel a contracts and refund the owner wallet

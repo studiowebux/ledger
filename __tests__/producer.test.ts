@@ -2,9 +2,6 @@
 import { Postgres } from "../src/db/postgres.class.ts";
 import { PubSub } from "../src/kafka.ts";
 import { Ledger } from "../src/ledger.class.ts";
-import { LedgerManager } from "../src/manager.class.ts";
-import { BuyItem } from "../src/processors/buy-item.class.ts";
-import { PostTransactionProcessor } from "../src/processors/post-transaction.class.ts";
 
 function generateRandomRequests(config: {
   participants: string[];
@@ -65,9 +62,6 @@ console.time("1013_txs");
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 
-const processor = new PostTransactionProcessor();
-processor.AddEvent("BuyItem", BuyItem);
-
 const db = new Postgres(url);
 const pubSub = new PubSub();
 
@@ -76,10 +70,10 @@ await pubSub.setupProducer();
 await db.sql`TRUNCATE utxos;`;
 await db.sql`TRUNCATE transactions;`;
 
-const ledger = new Ledger(db, (topic, messages) =>
-  pubSub.sendMessage(topic, messages),
-);
-const manager = new LedgerManager(ledger, processor);
+const ledger = new Ledger({
+  db,
+  sendMessage: (topic, messages) => pubSub.sendMessage(topic, messages),
+});
 
 await ledger.addAssets("alice", [
   { amount: BigInt(1000), unit: "gold" },
@@ -119,15 +113,15 @@ const txs = await Promise.all(requests1);
 await ledger.waitForTransactions(txs);
 await printBalance(ledger);
 
-const txId2 = await manager.transferFunds(
-  "alice",
-  "bob",
-  [{ unit: "coin", amount: BigInt(5_000) }],
-  [{ action: "BuyItem", itemId: "car_1" }],
-);
+// const txId2 = await manager.transferFunds(
+//   "alice",
+//   "bob",
+//   [{ unit: "coin", amount: BigInt(5_000) }],
+//   [{ action: "BuyItem", itemId: "car_1" }],
+// );
 
-await ledger.waitForTransactions([txId2]);
-await printBalance(ledger);
+// await ledger.waitForTransactions([txId2]);
+// await printBalance(ledger);
 
 await ledger.addAssets("ron", [
   { unit: "coin", amount: BigInt(3_333_666_666_999_999) },

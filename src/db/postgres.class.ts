@@ -1,5 +1,5 @@
 import postgres from "postgresjs";
-import type { RawUTXO, UTXO, Asset, Transaction } from "../types.ts";
+import type { RawUTXO, UTXO, Asset, Transaction, Contract } from "../types.ts";
 import { parseAssets, serialize } from "../encoder_decoder.ts";
 import { generateUtxoId } from "../util.ts";
 
@@ -22,7 +22,10 @@ export class Postgres {
     return id;
   }
 
-  async findContract(id: string, options?: { sql?: postgres.Sql }) {
+  async findContract(
+    id: string,
+    options?: { sql?: postgres.Sql },
+  ): Promise<Contract> {
     const sql = options?.sql || this.sql;
     const contracts =
       await sql`SELECT id, encode(inputs, 'hex') as inputs, encode(outputs, 'hex') as outputs, owner, executed FROM contracts WHERE id =${id}`;

@@ -3,7 +3,12 @@ import type { Postgres } from "./db/postgres.class.ts";
 import type { UTXO, Asset, Contract } from "./types.ts";
 
 import { retryWithBackoff } from "./retry.ts";
-import { generateContractId, generateTxId, replacer } from "./util.ts";
+import {
+  aggregateAssets,
+  generateContractId,
+  generateTxId,
+  replacer,
+} from "./util.ts";
 
 export class Ledger {
   private db: Postgres;
@@ -12,15 +17,15 @@ export class Ledger {
     messages: { key: string; value: string }[],
   ) => Promise<void>;
 
-  constructor(
-    db: Postgres,
-    sendMessage: (
+  constructor(options: {
+    db: Postgres;
+    sendMessage?: (
       topic: string,
       messages: { key: string; value: string }[],
-    ) => Promise<void> = async () => {},
-  ) {
-    this.db = db;
-    this.sendMessage = sendMessage;
+    ) => Promise<void>;
+  }) {
+    this.db = options.db;
+    this.sendMessage = options.sendMessage || (async () => {});
   }
 
   async process(message: string) {
@@ -100,88 +105,27 @@ export class Ledger {
             console.log(
               txId,
               contract.owner,
-              contract.inputs,
-              contract.outputs,
+              aggregateAssets(contract.inputs),
+              aggregateAssets(contract.outputs),
               buyer,
             );
             try {
-              const buyerUtxos = await this.db.findUTXOFor(buyer, { sql });
-              const collectedAssets: { [id: string]: bigint } = {};
-              const usedUtxos: UTXO[] = [];
-
-              // // Collect UTXOs until we have enough assets
-              for (const utxo of buyerUtxos) {
-                for (const asset of utxo.assets) {
-                  collectedAssets[asset.unit] =
-                    (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
-                }
-                usedUtxos.push(utxo);
-                const isFulfilled = contract.inputs.every((asset: Asset) =>
-                  asset.amount >= 0
-                    ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-                    : (collectedAssets[asset.unit] || BigInt(0)) >=
-                      BigInt(-1) * asset.amount,
-                );
-                if (isFulfilled) {
-                  break;
-                }
-              }
-
-              // // Check if we have all required assets
-              const hasEnough = contract.inputs.every((asset: Asset) =>
-                asset.amount >= 0
-                  ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-                  : (collectedAssets[asset.unit] || BigInt(0)) >=
-                    BigInt(-1) * asset.amount,
-              );
-              if (!hasEnough) {
-                throw new Error(
-                  `Insufficient assets (${JSON.stringify(contract.inputs, replacer)}) for contract ${txId}`,
+              if (buyer !== contract.owner) {
+                // Send assets to sender
+                await this.exchange(
+                  buyer,
+                  contractId,
+                  aggregateAssets(contract.inputs),
+                  { sql },
                 );
               }
-
-              // // Spend UTXOs
-              for (const utxo of usedUtxos) {
-                await this.db.updateUTXO(utxo.id, true, { sql });
-              }
-
-              // // Create new UTXO for the recipient
-              const recipientAssets = contract.inputs.filter(
-                (asset: Asset) => asset.amount > 0,
-              );
-              if (recipientAssets.length > 0) {
-                await this.db.createUTXO(contract.owner, recipientAssets, {
-                  sql,
-                });
-              }
-
-              // // Handle change: return unused assets to the sender, excluding burned assets
-              const remainingAssets: Asset[] = [];
-
-              for (const [unit, amount] of Object.entries(collectedAssets)) {
-                const requiredAmount =
-                  contract.inputs.find((asset: Asset) => asset.unit === unit)
-                    ?.amount || BigInt(0);
-
-                if (amount > requiredAmount) {
-                  // Calculate the remaining amount after sending or burning
-                  const remainingAmount =
-                    requiredAmount >= 0
-                      ? amount - requiredAmount // Sending positive amounts
-                      : amount + requiredAmount; // Burning negative amounts
-
-                  if (remainingAmount > 0) {
-                    remainingAssets.push({ unit, amount: remainingAmount });
-                  }
-                }
-              }
-
-              if (remainingAssets.length > 0) {
-                await this.db.createUTXO(buyer, remainingAssets, { sql });
-              }
-
               // Unlock assets from contract
-              await this.exchange(contractId, buyer, contract.outputs, { sql });
+              await this.exchange(
+                contractId,
+                buyer,
+                aggregateAssets(contract.outputs),
+                { sql },
+              );
               await this.db.updateContract(contractId, true, {
                 sql,
               });
@@ -374,134 +318,6 @@ export class Ledger {
       console.error(`Transaction ${txId} Failed,`, (e as Error).message);
       throw e;
     }
-
-    // await retryWithBackoff(
-    //   async () => {
-    //     try {
-    //       const isNegativeValue = assetsToSend.some(
-    //         (asset) => asset.amount > 0,
-    //       );
-
-    //       if (!isNegativeValue) {
-    //         for (const asset of assetsToSend.filter(
-    //           (asset) => asset.amount < 0,
-    //         )) {
-    //           const policy = await this.db.findPolicy(asset.unit);
-    //           if (policy.immutable) {
-    //             throw new Error(
-    //               `The amount for ${asset.unit} must be higher than 0`,
-    //             );
-    //           }
-    //         }
-    //       }
-
-    //       // buggy but partially works
-    //       try {
-    //         await this.db.sql.begin(async (sql: postgres.Sql) => {
-    //           const senderUtxos = await this.db.findUTXOFor(sender, { sql });
-    //           const collectedAssets: { [id: string]: bigint } = {};
-    //           const usedUtxos: UTXO[] = [];
-
-    //           // Collect UTXOs until we have enough assets
-    //           for (const utxo of senderUtxos) {
-    //             for (const asset of utxo.assets) {
-    //               collectedAssets[asset.unit] =
-    //                 (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
-    //             }
-    //             usedUtxos.push(utxo);
-    //             const isFulfilled = assetsToSend.every((asset) =>
-    //               asset.amount >= 0
-    //                 ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-    //                 : (collectedAssets[asset.unit] || BigInt(0)) >=
-    //                   BigInt(-1) * asset.amount,
-    //             );
-    //             if (isFulfilled) {
-    //               break;
-    //             }
-    //           }
-
-    //           // Check if we have all required assets
-    //           const hasEnough = assetsToSend.every((asset) =>
-    //             asset.amount >= 0
-    //               ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-    //               : (collectedAssets[asset.unit] || BigInt(0)) >=
-    //                 BigInt(-1) * asset.amount,
-    //           );
-    //           if (!hasEnough) {
-    //             throw new Error(
-    //               `Insufficient assets (${JSON.stringify(assetsToSend, replacer)}) for transaction ${txId}`,
-    //             );
-    //           }
-
-    //           // Spend UTXOs
-    //           for (const utxo of usedUtxos) {
-    //             await this.db.updateUTXO(utxo.id, true, { sql });
-    //           }
-
-    //           // Create new UTXO for the recipient
-    //           const recipientAssets = assetsToSend.filter(
-    //             (asset) => asset.amount > 0,
-    //           );
-    //           if (recipientAssets.length > 0) {
-    //             await this.db.createUTXO(recipient, recipientAssets, { sql });
-    //           }
-
-    //           // Handle change: return unused assets to the sender, excluding burned assets
-    //           const remainingAssets: Asset[] = [];
-
-    //           for (const [unit, amount] of Object.entries(collectedAssets)) {
-    //             const requiredAmount =
-    //               assetsToSend.find((asset) => asset.unit === unit)?.amount ||
-    //               BigInt(0);
-
-    //             if (amount > requiredAmount) {
-    //               // Calculate the remaining amount after sending or burning
-    //               const remainingAmount =
-    //                 requiredAmount >= 0
-    //                   ? amount - requiredAmount // Sending positive amounts
-    //                   : amount + requiredAmount; // Burning negative amounts
-
-    //               if (remainingAmount > 0) {
-    //                 remainingAssets.push({ unit, amount: remainingAmount });
-    //               }
-    //             }
-    //           }
-
-    //           if (remainingAssets.length > 0) {
-    //             await this.db.createUTXO(sender, remainingAssets, { sql });
-    //           }
-
-    //           // Update transaction to mark it as processed
-    //           await this.db.updateTransaction(
-    //             txId,
-    //             true,
-    //             assetsToSend,
-    //             "",
-    //             false,
-    //             { sql },
-    //           );
-    //           console.log(`Transaction ${txId} processed successfully!`);
-    //         });
-    //       } catch (e) {
-    //         console.error(`Transaction ${txId} Failed,`, (e as Error).message);
-    //         throw e;
-    //       }
-    //     } catch (error) {
-    //       console.error(
-    //         "Error processing transaction:",
-    //         (error as Error).message,
-    //       );
-    //       throw error;
-    //     }
-    //   },
-    //   {
-    //     retries: 3,
-    //     delay: 50, // Start with 50ms
-    //     factor: 1.5, // Exponential backoff multiplier
-    //     onRetry: (attempt, error) =>
-    //       console.log(`Retry attempt ${attempt}: ${error}`),
-    //   },
-    // );
   }
 
   /**
@@ -549,8 +365,18 @@ export class Ledger {
     const id = generateContractId();
     const txId = generateTxId();
     await this.db.createTransaction(txId, owner, "exchange");
-    await this.db.createContract(id, contract.inputs, contract.outputs, owner);
-    await this.processRequest(txId, owner, id, contract.outputs);
+    await this.db.createContract(
+      id,
+      aggregateAssets(contract.inputs),
+      aggregateAssets(contract.outputs),
+      owner,
+    );
+    await this.processRequest(
+      txId,
+      owner,
+      id,
+      aggregateAssets(contract.outputs),
+    );
     return id;
   }
 
@@ -581,7 +407,7 @@ export class Ledger {
     return id;
   }
 
-  async waitForTransactions(
+  waitForTransactions(
     txs: string[],
     interval: number = 500,
     timeout: number = 60000,
