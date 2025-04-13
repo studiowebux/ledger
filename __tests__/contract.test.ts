@@ -1,8 +1,8 @@
 // deno test -A __tests__/contract.test.ts
 import { assertEquals, assertRejects } from "jsr:@std/assert";
+import Logger from "@studiowebux/deno-minilog";
 import { Postgres } from "../src/db/postgres.class.ts";
 import { Ledger } from "../src/ledger.class.ts";
-import Logger from "@studiowebux/deno-minilog";
 import { parseAssets } from "../src/encoder_decoder.ts";
 import { Contract } from "../src/types.ts";
 

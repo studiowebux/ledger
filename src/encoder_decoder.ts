@@ -1,8 +1,9 @@
 import { Asset } from "./types.ts";
 
 export function stringify(input: object): string {
-  return JSON.stringify(input, (_, value) =>
-    typeof value === "bigint" ? Number(value) : value,
+  return JSON.stringify(
+    input,
+    (_, value) => typeof value === "bigint" ? Number(value) : value,
   );
 }
 

@@ -23,7 +23,7 @@ Deno.test("Test contract interactions", async (t) => {
     ]);
 
     assertEquals(
-      { tcoin: 600n, gold: 100n },
+      { tcoin: BigInt(600), gold: BigInt(100) },
       await ledger.getBalance("test_wallet"),
     );
     assertEquals({}, await ledger.getBalance("test_wallet_1"));
@@ -41,10 +41,13 @@ Deno.test("Test contract interactions", async (t) => {
     await ledger.waitForTransactions(["test_tx"]);
 
     assertEquals(
-      { tcoin: 100n, gold: 100n },
+      { tcoin: BigInt(100), gold: BigInt(100) },
       await ledger.getBalance("test_wallet"),
     );
-    assertEquals({ tcoin: 500n }, await ledger.getBalance("test_wallet_1"));
+    assertEquals(
+      { tcoin: BigInt(500) },
+      await ledger.getBalance("test_wallet_1"),
+    );
   });
 
   await t.step("Burn 100 gold from test_wallet", async () => {
@@ -58,7 +61,10 @@ Deno.test("Test contract interactions", async (t) => {
     ]);
 
     await ledger.waitForTransactions(["test_tx_1"]);
-    assertEquals({ tcoin: 100n }, await ledger.getBalance("test_wallet"));
+    assertEquals(
+      { tcoin: BigInt(100) },
+      await ledger.getBalance("test_wallet"),
+    );
   });
 
   await t.step("Cleanup", async () => {

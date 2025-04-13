@@ -1,8 +1,8 @@
 // deno run -A __tests__/consumer.test.ts
+import Logger from "@studiowebux/deno-minilog";
 import { Postgres } from "../src/db/postgres.class.ts";
 import { PubSub } from "../src/kafka.ts";
 import { Ledger } from "../src/ledger.class.ts";
-import Logger from "@studiowebux/deno-minilog";
 
 const url = "postgres://postgres:password@127.0.0.1:5432/ledger";
 

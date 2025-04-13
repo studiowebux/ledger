@@ -1,6 +1,8 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 CREATE TABLE IF NOT EXISTS utxos (
     id TEXT PRIMARY KEY,
-    assets JSON NOT NULL,
+    assets JSONB NOT NULL,
     owner TEXT NOT NULL,
     spent BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW (),
@@ -12,7 +14,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     filed BOOLEAN DEFAULT FALSE,
     failed BOOLEAN DEFAULT FALSE,
     reason TEXT,
-    assets JSON,
+    assets JSONB,
     type VARCHAR(255), -- contract or exchange
     owner TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW (),
@@ -28,8 +30,8 @@ CREATE TABLE IF NOT EXISTS policies (
 
 CREATE TABLE IF NOT EXISTS contracts (
     id TEXT PRIMARY KEY,
-    inputs JSON,
-    outputs JSON,
+    inputs JSONB,
+    outputs JSONB,
     owner TEXT NOT NULL,
     executed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW (),

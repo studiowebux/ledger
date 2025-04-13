@@ -32,7 +32,8 @@ function generateRandomRequests(config: {
 
     // Randomize the amount
     const amount = BigInt(
-      Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount,
+      Math.floor(Math.random() * (maxAmount - minAmount + 1)) +
+        minAmount,
     );
 
     return ledger.addRequest(from, to, [{ amount, unit }]);

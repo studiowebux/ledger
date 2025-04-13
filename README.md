@@ -1,4 +1,4 @@
-## Ledger
+## Unledger Protocol
 
 A Small experiment using ChatGPT to build a simple Ledger inspired from the UTXO Model.
 My goal is to get more familiar with the concepts and for that I like to build random stuff to learn.
@@ -9,12 +9,16 @@ My goal is to get more familiar with the concepts and for that I like to build r
 - 2 External dependencies: Kafka, Postgres
 - Multiple tests
 - Built with Deno 2
-- Exponential backoff mechanism to retry processing requests when selected UTXO is already spent.
+- Exponential backoff mechanism to retry processing requests when selected UTXO is already spent. (Intent based)
 - Distributed architecture using Kafka.
 - 4 postgres tables: utxos, transactions, contracts and policies.
 - Burn Assets or make them immutable (configurable in the policies table)
 - Contracts to lock/unlock assets.
 - Custom logger
+- TBD: Added Direct Listing with partial and all-or-nothing examples
+  - No support for fractional amount. (*Future Improvements: Automatically resolve the fractional amount and dispatch the amount correctly. It is required to automate an order book and select matching orders, it is far from complete or functional in the current state.*)
+- TBD: Implement ED25519 Signatures and transaction validity
+- TBD: Implement NFT/FT/Multi Assets
 
 ### Transactions
 
@@ -30,6 +34,8 @@ Then the system tries to achieve the request, if it was public and decentralize.
 ```bash
 docker compose up -d
 ```
+2.1. Run SQL `ledger.sql`
+
 3. Enjoy.
 
 ```bash
@@ -58,3 +64,10 @@ deno run -A __tests__/burn.test.ts
 ```bash
 deno run -A __tests__/contract.test.ts
 ```
+
+As of 2025-04-13:
+
+- Need to finish contract (all-or-nothing and partial filling)
+- Need to add signatures
+- Then evaluate time to implement in lucid adventure (for the in-game marketplace and assets tracking)
+- Add NFT (Currently only FT are implemented)

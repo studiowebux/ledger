@@ -1,4 +1,4 @@
-import { Kafka, Partitioners, type Consumer, type Producer } from "kafkajs";
+import { type Consumer, Kafka, Partitioners, type Producer } from "kafkajs";
 import { generateTxId } from "./util.ts";
 
 export const kafkaProducer: Kafka = new Kafka({
@@ -72,12 +72,9 @@ export class PubSub {
     try {
       await this.consumer.run({
         partitionsConsumedConcurrently: 3,
+        autoCommitInterval: 5000,
         eachMessage: async ({
-          _topic,
-          _partition,
           message,
-          _heartbeat,
-          _pause,
         }) => {
           if (!message?.value?.toString()) {
             throw new Error("No payload received");

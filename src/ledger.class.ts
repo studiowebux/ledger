@@ -15,6 +15,13 @@ export class Ledger {
   ) => Promise<void>;
   private logger: Logger;
 
+  /**
+   * Initializes a new instance of the Ledger class with provided options.
+   * @param {Object} options - The configuration options for Ledger
+   * @param {Postgres} options.db - Database connection object
+   * @param {(topic: string, messages: Array<{key: string, value: string}>) => Promise<void>} [options.sendMessage] - Function to send messages via a topic
+   * @param {Logger} options.logger - Logger instance for logging information
+   */
   constructor(options: {
     db: Postgres;
     sendMessage?: (
@@ -28,10 +35,16 @@ export class Ledger {
     this.logger = options.logger.fork("ledger");
   }
 
+  /**
+   * Processes a message containing transaction data.
+   * @param {string} message - The JSON stringified transaction message to process
+   * @returns {Promise<void>} A promise that resolves when processing is complete
+   */
   async process(message: string): Promise<void> {
     this.logger.verbose("process", message);
-    const { id, sender, recipient, assetsToSend, contractId } =
-      JSON.parse(message);
+    const { id, sender, recipient, assetsToSend, contractId } = JSON.parse(
+      message,
+    );
     let assets = [];
     try {
       const tx = await this.db.findTransaction(id);
@@ -45,7 +58,7 @@ export class Ledger {
       if (tx.type === "exchange") {
         assets = assetsToSend?.map((asset: Asset) => ({
           ...asset,
-          amount: BigInt(asset.amount),
+          amount: asset.amount,
         }));
         await this.processRequest(id, sender, recipient, assets);
       } else if (tx.type === "contract") {
@@ -68,6 +81,12 @@ export class Ledger {
     }
   }
 
+  /**
+   * Adds assets to a specified wallet.
+   * @param {string} walletId - The ID of the wallet to which assets will be added
+   * @param {Asset[]} assets - List of assets to add
+   * @returns {Promise<string>} A promise that resolves with the UTXO ID of the created asset entry
+   */
   async addAssets(walletId: string, assets: Asset[]): Promise<string> {
     this.logger.verbose("addAssets", walletId, assets);
     try {
@@ -85,6 +104,11 @@ export class Ledger {
     }
   }
 
+  /**
+   * Retrieves the balance of a specified wallet.
+   * @param {string} walletId - The ID of the wallet whose balance is to be retrieved
+   * @returns {Promise<Record<Unit, bigint>>} A promise that resolves with the balance record for the wallet
+   */
   async getBalance(walletId: string): Promise<Record<Unit, bigint>> {
     this.logger.verbose("getBalance", walletId);
     const utxos = await this.db.findUTXOFor(walletId);
@@ -100,6 +124,11 @@ export class Ledger {
     }, {});
   }
 
+  /**
+   * Retrieves all UTXOs associated with a specified wallet.
+   * @param {string} walletId - The ID of the wallet whose UTXOs are to be retrieved
+   * @returns {Promise<Utxo[]>} A promise that resolves with an array of UTXO objects for the wallet
+   */
   async getUtxos(walletId: string): Promise<Utxo[]> {
     this.logger.verbose("getUtxos", walletId);
     const utxos = await this.db.findUTXOFor(walletId);
@@ -201,9 +230,11 @@ export class Ledger {
           );
 
           if (!isNegativeValue) {
-            for (const asset of assetsToSend.filter(
-              (asset) => asset.amount < 0,
-            )) {
+            for (
+              const asset of assetsToSend.filter(
+                (asset) => asset.amount < 0,
+              )
+            ) {
               const policy = await this.db.findPolicy(asset.unit);
               if (policy.immutable) {
                 throw new Error(
@@ -227,14 +258,15 @@ export class Ledger {
           for (const utxo of parsedSenderUtxos) {
             for (const asset of utxo.assets) {
               collectedAssets[asset.unit] =
-                (collectedAssets[asset.unit] || BigInt(0)) + asset.amount;
+                (collectedAssets[asset.unit] || BigInt(0)) +
+                asset.amount;
             }
             usedUtxos.push(utxo);
             const isFulfilled = assetsToSend.every((asset) =>
               asset.amount >= 0
                 ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
                 : (collectedAssets[asset.unit] || BigInt(0)) >=
-                  BigInt(-1) * asset.amount,
+                  BigInt(-1) * asset.amount
             );
             if (isFulfilled) {
               break;
@@ -249,7 +281,9 @@ export class Ledger {
                 BigInt(-1) * asset.amount,
           );
           if (!hasEnough) {
-            throw new Error(`Insufficient assets (${stringify(assetsToSend)})`);
+            throw new Error(
+              `Insufficient assets (${stringify(assetsToSend)}) from ${sender}`,
+            );
           }
 
           // Spend UTXOs
@@ -278,16 +312,15 @@ export class Ledger {
           const remainingAssets: Asset[] = [];
 
           for (const [unit, amount] of Object.entries(collectedAssets)) {
-            const requiredAmount =
-              assetsToSend.find((asset) => asset.unit === unit)?.amount ||
-              BigInt(0);
+            const requiredAmount = assetsToSend.find((asset) =>
+              asset.unit === unit
+            )?.amount || BigInt(0);
 
             if (amount > requiredAmount) {
               // Calculate the remaining amount after sending or burning
-              const remainingAmount =
-                requiredAmount >= 0
-                  ? amount - requiredAmount // Sending positive amounts
-                  : amount + requiredAmount; // Burning negative amounts
+              const remainingAmount = requiredAmount >= 0
+                ? amount - requiredAmount // Sending positive amounts
+                : amount + requiredAmount; // Burning negative amounts
 
               if (remainingAmount > 0) {
                 remainingAssets.push({ unit, amount: remainingAmount });
@@ -326,11 +359,12 @@ export class Ledger {
   }
 
   /**
-   * Process unilateral requests
-   * @param txId
-   * @param sender
-   * @param recipient
-   * @param assetsToSend
+   * Processes unilateral requests for asset transfers.
+   * @param {string} txId - The ID of the transaction to process
+   * @param {string} sender - The ID of the sender wallet
+   * @param {string} recipient - The ID of the recipient wallet
+   * @param {Asset[]} assetsToSend - List of assets to be transferred
+   * @returns {Promise<void>} A promise that resolves when the request processing is complete
    */
   async processRequest(
     txId: string,
@@ -370,11 +404,11 @@ export class Ledger {
   }
 
   /**
-   * Function that send asset(s) to a recipient (Unilateral)
-   * @param sender
-   * @param recipient
-   * @param assetsToSend
-   * @returns
+   * Creates a unilateral transaction to send assets.
+   * @param {string} sender - The ID of the sender wallet
+   * @param {string} recipient - The ID of the recipient wallet
+   * @param {Asset[]} assetsToSend - List of assets to be transferred
+   * @returns {Promise<string>} A promise that resolves with the transaction ID of the created request
    */
   async addRequest(
     sender: string,
@@ -397,10 +431,10 @@ export class Ledger {
   }
 
   /**
-   * Function that Trade Asset(s) (Bilateral)
-   * @param owner
-   * @param contract
-   * @returns
+   * Creates a new contract involving asset trades.
+   * @param {string} owner - The ID of the contract owner wallet
+   * @param {Pick<Contract, "inputs" | "outputs">} contract - Details of the inputs and outputs for the contract
+   * @returns {Promise<string>} A promise that resolves with the contract ID of the created contract
    */
   async createContract(
     owner: string,
@@ -439,10 +473,10 @@ export class Ledger {
   }
 
   /**
-   * Function that Trade Asset(s) (Bilateral)
-   * @param buyer
-   * @param contractId
-   * @returns
+   * Initiates a process to handle an existing contract as a buyer.
+   * @param {string} buyer - The ID of the buyer wallet
+   * @param {string} contractId - The ID of the contract to participate in
+   * @returns {Promise<string>} A promise that resolves with the transaction ID associated with adding the contract
    */
   async addContract(buyer: string, contractId: string): Promise<string> {
     this.logger.verbose("addContract", buyer, contractId);
@@ -467,6 +501,13 @@ export class Ledger {
     return txId;
   }
 
+  /**
+   * Waits for specified transactions to be completed within a timeout period.
+   * @param {string[]} txs - List of transaction IDs to wait on
+   * @param {number} [interval=500] - Interval in milliseconds to check the transaction status
+   * @param {number} [timeout=60000] - Timeout in milliseconds before giving up on waiting
+   * @returns {Promise<void>} A promise that resolves when all transactions are completed or rejects if timeout occurs
+   */
   waitForTransactions(
     txs: string[],
     interval: number = 500,
