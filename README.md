@@ -17,8 +17,10 @@ My goal is to get more familiar with the concepts and for that I like to build r
 - Custom logger
 - TBD: Added Direct Listing with partial and all-or-nothing examples
   - No support for fractional amount. (*Future Improvements: Automatically resolve the fractional amount and dispatch the amount correctly. It is required to automate an order book and select matching orders, it is far from complete or functional in the current state.*)
-- TBD: Implement ED25519 Signatures and transaction validity
-- TBD: Implement NFT/FT/Multi Assets
+- TBD: Implement ED25519 Signatures and transaction validity (started)
+- TBD: Implement NFT/FT/Multi Assets (started)
+- TBD: Websocket, HTTPS, and Protobuf ? Supports
+- TBD: User Vault
 
 ### Transactions
 
@@ -63,6 +65,9 @@ deno run -A __tests__/burn.test.ts
 **Contracts**
 ```bash
 deno run -A __tests__/contract.test.ts
+# Direct listing and attempt to build the fondation for an order book (partial filling of smart contract, using a ratio)
+deno run -A __tests__/direct_listing.ts
+deno run -A __tests__/partial_direct_listing.ts
 ```
 
 As of 2025-04-13:

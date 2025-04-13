@@ -2,11 +2,39 @@ import type postgres from "postgresjs";
 import Logger from "@studiowebux/deno-minilog";
 
 import type { Postgres } from "./db/postgres.class.ts";
-import type { Asset, Contract, Unit, Utxo } from "./types.ts";
+import type { Asset, Contract, Transaction, Unit, Utxo } from "./types.ts";
 import { retryWithBackoff } from "./retry.ts";
-import { generateContractId, generateTxId, generateUtxoId } from "./util.ts";
-import { parseAssets, stringify, aggregateAssets } from "./encoder_decoder.ts";
+import {
+  generateContractId,
+  generateTxId,
+  generateUtxoId,
+  // isDecimal,
+} from "./util.ts";
+import { aggregateAssets, parseAssets, stringify } from "./encoder_decoder.ts";
 
+// const calculateRemainingAssets = (inputs: Asset[], assets: Asset[]) => {
+//   return inputs
+//     .map((input) => ({
+//       ...input,
+//       amount: input.amount,
+//     }))
+//     .reduce((acc, asset) => {
+//       const partialAsset = assets.find((p) => p.policy_id === asset.policy_id);
+//       if (partialAsset) {
+//         acc.push({
+//           policy_id: asset.policy_id,
+//           amount: asset.amount - partialAsset.amount,
+//         });
+//       } else {
+//         acc.push(asset);
+//       }
+//       return acc;
+//     }, [] as Asset[]);
+// };
+
+/**
+ * Ledger class responsible for handling various transaction types.
+ */
 export class Ledger {
   private db: Postgres;
   private sendMessage: (
@@ -42,10 +70,17 @@ export class Ledger {
    */
   async process(message: string): Promise<void> {
     this.logger.verbose("process", message);
-    const { id, sender, recipient, assetsToSend, contractId } = JSON.parse(
-      message,
-    );
-    let assets = [];
+    const { id, sender, recipient, assetsToSend, contractId, signature } = JSON
+      .parse(
+        message,
+      );
+
+    this.logger.debug("assetsToSend", assetsToSend);
+    const assets: Asset[] = assetsToSend?.map((asset: Asset) => ({
+      ...asset,
+      amount: BigInt(asset.amount),
+    }));
+    this.logger.debug("assets", assets);
     try {
       const tx = await this.db.findTransaction(id);
 
@@ -56,11 +91,7 @@ export class Ledger {
         return;
       }
       if (tx.type === "exchange") {
-        assets = assetsToSend?.map((asset: Asset) => ({
-          ...asset,
-          amount: asset.amount,
-        }));
-        await this.processRequest(id, sender, recipient, assets);
+        await this.processRequest(id, sender, recipient, assets, signature);
       } else if (tx.type === "contract") {
         await this.processContract(id, sender, contractId);
       } else {
@@ -68,7 +99,7 @@ export class Ledger {
       }
     } catch (e) {
       this.logger.error(
-        "Process terminated with an error, ",
+        "Process terminated with an error,",
         (e as Error).message,
       );
       await this.db.updateTransaction(
@@ -90,6 +121,8 @@ export class Ledger {
   async addAssets(walletId: string, assets: Asset[]): Promise<string> {
     this.logger.verbose("addAssets", walletId, assets);
     try {
+      // const policy = await this.db.findPolicy();
+
       const utxoId = await this.db.createUTXO(walletId, {
         id: generateUtxoId(),
         assets,
@@ -112,13 +145,12 @@ export class Ledger {
   async getBalance(walletId: string): Promise<Record<Unit, bigint>> {
     this.logger.verbose("getBalance", walletId);
     const utxos = await this.db.findUTXOFor(walletId);
-    const parsedUtxos = utxos.map((utxo) => ({
-      ...utxo,
-      assets: parseAssets(utxo.assets),
-    }));
-    return parsedUtxos.reduce((balance: Record<Unit, bigint>, utxo) => {
+
+    return utxos.reduce((balance: Record<Unit, bigint>, utxo) => {
       for (const asset of utxo.assets) {
-        balance[asset.unit] = (balance[asset.unit] || BigInt(0)) + asset.amount;
+        balance[`${asset.policy_id}.${asset.name}`] =
+          (balance[`${asset.policy_id}.${asset.name}`] || BigInt(0)) +
+          asset.amount;
       }
       return balance;
     }, {});
@@ -132,13 +164,21 @@ export class Ledger {
   async getUtxos(walletId: string): Promise<Utxo[]> {
     this.logger.verbose("getUtxos", walletId);
     const utxos = await this.db.findUTXOFor(walletId);
-    return utxos.map((utxo) => ({ ...utxo, assets: parseAssets(utxo.assets) }));
+    return utxos;
   }
 
+  /**
+   * Processes a contract transaction.
+   * @param {string} txId - The ID of the transaction to process
+   * @param {string} buyer - The ID of the buyer involved in the contract
+   * @param {string} contractId - The ID of the contract to be processed
+   * @returns {Promise<void>} A promise that resolves when the contract processing is complete
+   */
   async processContract(
     txId: string,
     buyer: string,
     contractId: string,
+    inputs?: Asset[],
   ): Promise<void> {
     this.logger.verbose("processContract", txId, buyer, contractId);
     if (!buyer || buyer === "") {
@@ -174,9 +214,19 @@ export class Ledger {
                 sql,
               });
               // Update transaction to mark it as processed
-              await this.db.updateTransaction(txId, true, [], "", false, {
-                sql,
-              });
+              await this.db.updateTransaction(
+                txId,
+                true,
+                [
+                  ...aggregateAssets(parseAssets(contract.inputs)),
+                  ...aggregateAssets(parseAssets(contract.outputs)),
+                ],
+                "",
+                false,
+                {
+                  sql,
+                },
+              );
               this.logger.info(`Contract ${txId} processed successfully!`);
             } catch (e) {
               this.logger.error(
@@ -204,6 +254,192 @@ export class Ledger {
     );
   }
 
+  // 2025-04-13: was trying to do the fractional with bigint ... put aside for now, I am building this to learn and maybe to use in my game ???
+  // async processContract(
+  //   txId: string,
+  //   buyer: string,
+  //   contractId: string,
+  //   inputs?: Asset[],
+  // ): Promise<void> {
+  //   this.logger.verbose("processContract", txId, buyer, contractId);
+  //   if (!buyer || buyer === "") {
+  //     throw new Error("Missing buyer");
+  //   }
+  //   if (!contractId || contractId === "") {
+  //     throw new Error("No contract received");
+  //   }
+  //   await retryWithBackoff(
+  //     async () => {
+  //       try {
+  //         await this.db.sql.begin(async (sql: postgres.Sql) => {
+  //           const contract = await this.db.findContract(contractId, { sql });
+  //           try {
+  //             // Calculate the total input value for the contract and provided inputs
+  //             const totalContractInputValue = parseAssets(
+  //               contract.inputs,
+  //             ).reduce((sum, asset) => sum + asset.amount, 0);
+  //             this.logger.verbose(
+  //               `totalContractInputValue ${totalContractInputValue}`,
+  //             );
+
+  //             // If the user provider a specific inputs, use it (partial)
+  //             // otherwise it is all-or-nothing
+  //             const specifiedInputValue = (
+  //               inputs || parseAssets(contract.inputs)
+  //             ).reduce((sum, asset) => sum + asset.amount, 0);
+  //             this.logger.verbose(`specifiedInputValue ${specifiedInputValue}`);
+
+  //             // Compute the ratio based on specified input amounts
+  //             if (
+  //               totalContractInputValue === 0 ||
+  //               specifiedInputValue > totalContractInputValue
+  //             ) {
+  //               throw new Error("Invalid partial input amounts");
+  //             }
+
+  //             const executionRatio = specifiedInputValue /
+  //               totalContractInputValue;
+  //             this.logger.verbose(`executionRatio ${executionRatio}`);
+
+  //             this.logger.verbose(
+  //               `${executionRatio * parseAssets(contract.inputs)[0].amount} ${
+  //                 parseAssets(contract.inputs)[0].policy_id
+  //               } = ${
+  //                 executionRatio * parseAssets(contract.outputs)[0].amount
+  //               }x ${parseAssets(contract.outputs)[0].policy_id}`,
+  //             );
+
+  //             const partialInputs = parseAssets(contract.inputs).map(
+  //               (input) => ({
+  //                 ...input,
+  //                 amount: input.amount * executionRatio,
+  //               }),
+  //             );
+  //             this.logger.verbose(`partialInputs ${stringify(partialInputs)}`);
+
+  //             const partialOutputs = parseAssets(contract.outputs).map(
+  //               (output) => ({
+  //                 ...output,
+  //                 amount: output.amount * executionRatio,
+  //               }),
+  //             );
+  //             this.logger.verbose(
+  //               `Partial Outputs ${stringify(partialOutputs)}`,
+  //             );
+
+  //             if (
+  //               partialInputs.some((input) => isDecimal(input.amount)) ||
+  //               partialOutputs.some((output) => isDecimal(output.amount))
+  //             ) {
+  //               throw new Error("The input or output contains decimals.");
+  //             }
+
+  //             if (buyer !== contract.owner) {
+  //               this.logger.verbose(`Executing Contract #${contractId}`);
+
+  //               // Send assets to sender
+  //               await this.exchange(
+  //                 buyer,
+  //                 contract.owner, // 2025-02-02: replace to the owner address instead. contractId,
+  //                 aggregateAssets(partialInputs), // 2025-02-06 - Here we have to send not only the unlock assets, but the remaining inputs... like for fractional transaction.
+  //                 { sql },
+  //               );
+  //             }
+  //             // Calculate and execute partial output based on the ratio
+
+  //             // Unlock assets from contract
+  //             await this.exchange(
+  //               contractId,
+  //               buyer,
+  //               aggregateAssets(partialOutputs), // 2025-02-06 - same as inputs but send the remaining assets to the buyer (like its change address)
+  //               { sql },
+  //             );
+
+  //             this.logger.verbose(`Contract id ${contractId}`);
+
+  //             // TODO: using partialInputs and partialOutputs (two variables independant)
+  //             // I need a fucntion that returns the new amount (using contract.inputs and contract.outputs)
+
+  //             if (executionRatio === 1) {
+  //               await this.db.updateContractState(
+  //                 contractId,
+  //                 calculateRemainingAssets(
+  //                   parseAssets(contract.inputs),
+  //                   partialInputs,
+  //                 ),
+  //                 calculateRemainingAssets(
+  //                   parseAssets(contract.outputs),
+  //                   partialOutputs,
+  //                 ),
+  //                 true,
+  //                 { sql },
+  //               );
+
+  //               this.logger.info(`Contract ${txId} fully executed!`);
+  //             } else {
+  //               await this.db.updateContractState(
+  //                 contractId,
+  //                 calculateRemainingAssets(
+  //                   parseAssets(contract.inputs),
+  //                   partialInputs,
+  //                 ),
+  //                 calculateRemainingAssets(
+  //                   parseAssets(contract.outputs),
+  //                   partialOutputs,
+  //                 ),
+  //                 false,
+  //                 { sql },
+  //               );
+  //               this.logger.info(`Contract ${txId} partially executed`);
+  //             }
+
+  //             // Update transaction to mark it as processed
+  //             await this.db.updateTransaction(
+  //               txId,
+  //               true,
+  //               [...partialInputs, ...partialOutputs], // the assets sent to owner and assets sent to "buyer"
+  //               "",
+  //               false,
+  //               {
+  //                 sql,
+  //               },
+  //             );
+
+  //             this.logger.info(`Contract ${txId} processed successfully!`);
+  //           } catch (e) {
+  //             this.logger.error(
+  //               `Contract ${txId} Failed,`,
+  //               (e as Error).message,
+  //             );
+  //             throw e;
+  //           }
+  //         });
+  //       } catch (error) {
+  //         this.logger.error(
+  //           "Error processing contract:",
+  //           (error as Error).message,
+  //         );
+  //         throw error;
+  //       }
+  //     },
+  //     {
+  //       retries: 3,
+  //       delay: 50, // Start with 50ms
+  //       factor: 1.5, // Exponential backoff multiplier
+  //       onRetry: (attempt, error) =>
+  //         this.logger.warn(`Retry attempt ${attempt}: ${error}`),
+  //     },
+  //   );
+  // }
+
+  /**
+   * Handles asset exchanges between sender and recipient.
+   * @param {string} sender - The ID of the sender wallet
+   * @param {string} recipient - The ID of the recipient wallet
+   * @param {Asset[]} assetsToSend - List of assets to be transferred
+   * @param {Object} [options] - Additional options, including optional sql transaction context
+   * @returns {Promise<void>} A promise that resolves when the exchange is complete
+   */
   async exchange(
     sender: string,
     recipient: string,
@@ -235,10 +471,10 @@ export class Ledger {
                 (asset) => asset.amount < 0,
               )
             ) {
-              const policy = await this.db.findPolicy(asset.unit);
+              const policy = await this.db.findPolicy(asset.policy_id);
               if (policy.immutable) {
                 throw new Error(
-                  `The amount for ${asset.unit} must be higher than 0`,
+                  `The amount for ${asset.policy_id} must be higher than 0`,
                 );
               }
             }
@@ -247,38 +483,35 @@ export class Ledger {
           // buggy but partially works
           // await this.db.sql.begin(async (sql: postgres.Sql) => {
           const senderUtxos = await this.db.findUTXOFor(sender, { sql });
-          const parsedSenderUtxos: Utxo[] = senderUtxos.map((utxo) => ({
-            ...utxo,
-            assets: parseAssets(utxo.assets),
-          }));
-          const collectedAssets: { [id: string]: bigint } = {};
+          const collectedAssets: { [unit: Unit]: bigint } = {};
           const usedUtxos: Utxo[] = [];
 
           // Collect UTXOs until we have enough assets
-          for (const utxo of parsedSenderUtxos) {
+          for (const utxo of senderUtxos) {
+            this.logger.debug("utxo.id:", utxo.id);
             for (const asset of utxo.assets) {
-              collectedAssets[asset.unit] =
-                (collectedAssets[asset.unit] || BigInt(0)) +
+              this.logger.debug(
+                "asset.unit:",
+                `${asset.policy_id}.${asset.name}`,
+              );
+              collectedAssets[`${asset.policy_id}.${asset.name}`] =
+                (collectedAssets[`${asset.policy_id}.${asset.name}`] ||
+                  BigInt(0)) +
                 asset.amount;
             }
             usedUtxos.push(utxo);
-            const isFulfilled = assetsToSend.every((asset) =>
-              asset.amount >= 0
-                ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-                : (collectedAssets[asset.unit] || BigInt(0)) >=
-                  BigInt(-1) * asset.amount
-            );
-            if (isFulfilled) {
-              break;
-            }
           }
+
+          this.logger.debug(assetsToSend, collectedAssets, usedUtxos);
 
           // Check if we have all required assets
           const hasEnough = assetsToSend.every((asset) =>
             asset.amount >= 0
-              ? (collectedAssets[asset.unit] || BigInt(0)) >= asset.amount
-              : (collectedAssets[asset.unit] || BigInt(0)) >=
-                BigInt(-1) * asset.amount,
+              ? (collectedAssets[`${asset.policy_id}.${asset.name}`] ||
+                BigInt(0)) >= asset.amount
+              : (collectedAssets[`${asset.policy_id}.${asset.name}`] ||
+                BigInt(0)) >=
+                BigInt(-1) * asset.amount
           );
           if (!hasEnough) {
             throw new Error(
@@ -313,21 +546,31 @@ export class Ledger {
 
           for (const [unit, amount] of Object.entries(collectedAssets)) {
             const requiredAmount = assetsToSend.find((asset) =>
-              asset.unit === unit
+              `${asset.policy_id}.${asset.name}` === unit
             )?.amount || BigInt(0);
 
+            // An asset has been found, so need to check if there is more than expected amount
+            // if so we need to split the amount
             if (amount > requiredAmount) {
               // Calculate the remaining amount after sending or burning
               const remainingAmount = requiredAmount >= 0
                 ? amount - requiredAmount // Sending positive amounts
                 : amount + requiredAmount; // Burning negative amounts
 
+              const [policy_id, name] = unit.split(".");
               if (remainingAmount > 0) {
-                remainingAssets.push({ unit, amount: remainingAmount });
+                remainingAssets.push({
+                  policy_id,
+                  name,
+                  amount: remainingAmount,
+                });
               }
             }
           }
 
+          this.logger.debug("remainingAssets", remainingAssets);
+
+          // Create UTXO to send back to the sender (change address)
           if (remainingAssets.length > 0) {
             await this.db.createUTXO(
               sender,
@@ -371,6 +614,7 @@ export class Ledger {
     sender: string,
     recipient: string,
     assetsToSend: Asset[],
+    signature: string,
   ): Promise<void> {
     this.logger.verbose(
       "processRequest",
@@ -378,6 +622,7 @@ export class Ledger {
       sender,
       recipient,
       assetsToSend,
+      signature,
     );
 
     if (!sender || sender === "") {
@@ -388,6 +633,9 @@ export class Ledger {
     }
     if (!assetsToSend || assetsToSend.length === 0) {
       throw new Error("No assets to send");
+    }
+    if (!signature || signature.length === 0) {
+      throw new Error("Missing signature");
     }
 
     try {
@@ -414,14 +662,15 @@ export class Ledger {
     sender: string,
     recipient: string,
     assetsToSend: Asset[],
+    signature: string,
   ): Promise<string> {
     this.logger.verbose("addRequest", sender, recipient, assetsToSend);
     const id = generateTxId();
-    await this.db.createTransaction(id, sender, "exchange");
+    await this.db.createTransaction(id, sender, "exchange", signature);
     await this.sendMessage("transactions", [
       {
         key: sender,
-        value: stringify({ id, sender, recipient, assetsToSend }),
+        value: stringify({ id, sender, recipient, assetsToSend, signature }),
       },
     ]);
 
@@ -439,6 +688,7 @@ export class Ledger {
   async createContract(
     owner: string,
     contract: Pick<Contract, "inputs" | "outputs">,
+    signature: string,
   ): Promise<string> {
     this.logger.verbose("createContract", owner, contract);
 
@@ -461,7 +711,7 @@ export class Ledger {
 
     const txId = generateTxId();
     this.logger.verbose("Transfer asset(s) from owner to contract");
-    await this.db.createTransaction(txId, owner, "exchange");
+    await this.db.createTransaction(txId, owner, "exchange", signature);
     await this.processRequest(
       txId,
       owner,
@@ -478,7 +728,11 @@ export class Ledger {
    * @param {string} contractId - The ID of the contract to participate in
    * @returns {Promise<string>} A promise that resolves with the transaction ID associated with adding the contract
    */
-  async addContract(buyer: string, contractId: string): Promise<string> {
+  async addContract(
+    buyer: string,
+    contractId: string,
+    signature: string,
+  ): Promise<string> {
     this.logger.verbose("addContract", buyer, contractId);
 
     const txId = generateTxId();
@@ -486,7 +740,7 @@ export class Ledger {
     if (!contract || contract.executed === true) {
       throw new Error("Contract not found or already executed");
     }
-    await this.db.createTransaction(txId, buyer, "contract");
+    await this.db.createTransaction(txId, buyer, "contract", signature);
     await this.sendMessage("contracts", [
       {
         key: contract.owner, // seller wallet
@@ -512,24 +766,26 @@ export class Ledger {
     txs: string[],
     interval: number = 500,
     timeout: number = 60000,
-  ): Promise<void> {
-    this.logger.info("Wait For transactions to be filed:", txs.join(","));
+  ): Promise<Transaction | undefined> {
+    this.logger.info("Wait For transactions to be executed:", txs.join(","));
     return new Promise((resolve, reject) => {
       const start = Date.now();
 
       const checkCondition = async () => {
         try {
           let completed = true;
+          let transactionInfo: undefined | Transaction = undefined;
           for (const txId of txs) {
             const tx = await this.db.findTransaction(txId);
-            if (tx.filed === false) {
+            if (tx.executed === false) {
               completed = false;
               break;
             }
+            transactionInfo = tx;
           }
           if (completed) {
             this.logger.info("All transactions completed");
-            return resolve();
+            return resolve(transactionInfo);
           }
           if (Date.now() - start >= timeout) {
             return reject(

@@ -9,8 +9,12 @@ import {
 } from "node:crypto";
 import { Buffer } from "node:buffer";
 
+const __filename = new URL("", import.meta.url).pathname;
+// Will contain trailing slash
+const __dirname = new URL(".", import.meta.url).pathname;
+
 // --- BIP39 Wordlist (English, first 2048 words) ---
-const wordlist = Deno.readTextFileSync("./bip39-wordlist.txt")
+const wordlist = Deno.readTextFileSync(`${__dirname}/../bip39-wordlist.txt`)
   .trim() // remove trailling enter (last line)
   .split("\n");
 
@@ -23,11 +27,11 @@ export function generateMnemonic(bits = 128) {
   const checksumBits = hash[0].toString(2).padStart(8, "0").slice(0, bits / 32);
   const bitsConcat = entropyBits + checksumBits;
   const chunks = bitsConcat.match(/.{1,11}/g);
-  return chunks.map((bin) => wordlist[parseInt(bin, 2)]).join(" ");
+  return chunks?.map((bin) => wordlist[parseInt(bin, 2)]).join(" ");
 }
 
 // --- BIP39 mnemonic → seed ---
-export function mnemonicToSeed(mnemonic, passphrase = "") {
+export function mnemonicToSeed(mnemonic: string, passphrase = "") {
   return pbkdf2Sync(
     mnemonic.normalize("NFKD"),
     ("mnemonic" + passphrase).normalize("NFKD"),
@@ -38,7 +42,7 @@ export function mnemonicToSeed(mnemonic, passphrase = "") {
 }
 
 // --- SLIP-0010: seed → master key (Ed25519) ---
-export function getMasterKeyFromSeed(seed) {
+export function getMasterKeyFromSeed(seed: Buffer) {
   const hmac = createHmac("sha512", "ed25519 seed");
   hmac.update(seed);
   const I = hmac.digest();
@@ -46,7 +50,7 @@ export function getMasterKeyFromSeed(seed) {
 }
 
 // --- Create ASN.1 DER PKCS#8 Private Key from 32-byte Ed25519 seed ---
-export function createPKCS8Ed25519PrivateKey(rawKey) {
+export function createPKCS8Ed25519PrivateKey(rawKey: Buffer) {
   const seedPrefix = Buffer.from([
     0x30,
     0x2e,
@@ -65,11 +69,11 @@ export function createPKCS8Ed25519PrivateKey(rawKey) {
     0x04,
     0x20,
   ]);
-  return Buffer.concat([seedPrefix, rawKey]);
+  return Buffer.concat([seedPrefix as Uint8Array, rawKey as Uint8Array]);
 }
 
 // --- Create Keypair from Seed ---
-export function createKeyPairFromSeed(seed) {
+export function createKeyPairFromSeed(seed: Buffer) {
   const { key: privateKeyRaw } = getMasterKeyFromSeed(seed);
   const pkcs8Key = createPKCS8Ed25519PrivateKey(privateKeyRaw);
   const privateKey = createPrivateKey({

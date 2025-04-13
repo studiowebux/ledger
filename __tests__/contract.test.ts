@@ -20,8 +20,8 @@ Deno.test("Test contract interactions", async (t) => {
 
   await t.step("Add Initial Assets", async () => {
     await ledger.addAssets("customer_1", [
-      { amount: BigInt(10), unit: "coin" },
-      { amount: BigInt(1), unit: "iron" },
+      { amount: BigInt(10), policy_id: "coin", name: "coin" },
+      { amount: BigInt(1), policy_id: "resource", name: "iron" },
     ]);
     assertEquals(
       {
@@ -31,7 +31,7 @@ Deno.test("Test contract interactions", async (t) => {
       await ledger.getBalance("customer_1"),
     );
     await ledger.addAssets("customer_2", [
-      { amount: BigInt(20), unit: "coin" },
+      { amount: BigInt(20), policy_id: "coin", name: "coin" },
     ]);
     assertEquals(
       {
@@ -40,8 +40,8 @@ Deno.test("Test contract interactions", async (t) => {
       await ledger.getBalance("customer_2"),
     );
     await ledger.addAssets("store_1", [
-      { amount: BigInt(10), unit: "gold" },
-      { amount: BigInt(1_000_000), unit: "iron" },
+      { amount: BigInt(10), policy_id: "resource", name: "gold" },
+      { amount: BigInt(1_000_000), policy_id: "resource", name: "iron" },
     ]);
     assertEquals(
       {
@@ -54,9 +54,9 @@ Deno.test("Test contract interactions", async (t) => {
 
   await t.step("Create contract", async () => {
     contractId = await ledger.createContract("store_1", {
-      outputs: [{ unit: "gold", amount: BigInt(1) }],
-      inputs: [{ unit: "coin", amount: BigInt(10) }],
-    });
+      outputs: [{ policy_id: "resource", name: "gold", amount: BigInt(1) }],
+      inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+    }, "sig-1");
     const contract = await db.findContract(contractId);
     const parsedContract: Contract = {
       ...contract,
@@ -65,8 +65,8 @@ Deno.test("Test contract interactions", async (t) => {
     };
     assertEquals(
       {
-        inputs: [{ unit: "coin", amount: 10n }],
-        outputs: [{ unit: "gold", amount: 1n }],
+        inputs: [{ policy_id: "coin", name: "coin", amount: 10n }],
+        outputs: [{ policy_id: "resource", name: "gold", amount: 1n }],
         executed: false,
         owner: "store_1",
         id: contractId,
@@ -77,7 +77,7 @@ Deno.test("Test contract interactions", async (t) => {
 
   await t.step("Process contract", async () => {
     const txId = await db
-      .createTransaction("test_buy_gold", "customer_1", "contract")
+      .createTransaction("test_buy_gold", "customer_1", "contract", "sig-1")
       .catch(() => {
         //ignore error
       });
@@ -101,29 +101,29 @@ Deno.test("Test contract interactions", async (t) => {
   await t.step("Error handling contract creation negative value", () => {
     assertRejects(async () => {
       await ledger.createContract("store_1", {
-        outputs: [{ unit: "gold", amount: BigInt(-1) }],
-        inputs: [{ unit: "coin", amount: BigInt(10) }],
-      });
+        outputs: [{ policy_id: "resource", name: "gold", amount: BigInt(-1) }],
+        inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+      }, "sig-1");
     });
   });
 
   await t.step("Error handling contract creation too many resource", () => {
     assertRejects(async () => {
       await ledger.createContract("store_1", {
-        outputs: [{ unit: "gold", amount: BigInt(20) }],
-        inputs: [{ unit: "coin", amount: BigInt(10) }],
-      });
+        outputs: [{ policy_id: "resource", name: "gold", amount: BigInt(20) }],
+        inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+      }, "sig-1");
     });
   });
 
   await t.step("Create another contract", async () => {
     const contractId = await ledger.createContract("store_1", {
       outputs: [
-        { unit: "gold", amount: BigInt(1) },
-        { unit: "iron", amount: BigInt(100) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "iron", amount: BigInt(100) },
       ],
-      inputs: [{ unit: "coin", amount: BigInt(10) }],
-    });
+      inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+    }, "sig-1");
 
     const contract = await db.findContract(contractId);
     const parsedContract: Contract = {
@@ -133,10 +133,10 @@ Deno.test("Test contract interactions", async (t) => {
     };
     assertEquals(
       {
-        inputs: [{ unit: "coin", amount: 10n }],
+        inputs: [{ policy_id: "coin", name: "coin", amount: 10n }],
         outputs: [
-          { unit: "gold", amount: 1n },
-          { unit: "iron", amount: 100n },
+          { policy_id: "resource", name: "gold", amount: 1n },
+          { policy_id: "resource", name: "iron", amount: 100n },
         ],
         executed: false,
         owner: "store_1",
@@ -149,12 +149,12 @@ Deno.test("Test contract interactions", async (t) => {
   await t.step("Adding separated resource", async () => {
     const contractId = await ledger.createContract("store_1", {
       outputs: [
-        { unit: "gold", amount: BigInt(1) },
-        { unit: "gold", amount: BigInt(1) },
-        { unit: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
       ],
-      inputs: [{ unit: "coin", amount: BigInt(10) }],
-    });
+      inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+    }, "sig-1");
 
     const contract = await db.findContract(contractId);
     const parsedContract: Contract = {
@@ -164,8 +164,8 @@ Deno.test("Test contract interactions", async (t) => {
     };
     assertEquals(
       {
-        inputs: [{ unit: "coin", amount: 10n }],
-        outputs: [{ unit: "gold", amount: 3n }],
+        inputs: [{ policy_id: "coin", name: "coin", amount: 10n }],
+        outputs: [{ policy_id: "resource", name: "gold", amount: 3n }],
         executed: false,
         owner: "store_1",
         id: contractId,
@@ -184,12 +184,12 @@ Deno.test("Test contract interactions", async (t) => {
     );
     const contractId = await ledger.createContract("store_1", {
       outputs: [
-        { unit: "gold", amount: BigInt(1) },
-        { unit: "gold", amount: BigInt(1) },
-        { unit: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
+        { policy_id: "resource", name: "gold", amount: BigInt(1) },
       ],
-      inputs: [{ unit: "coin", amount: BigInt(10) }],
-    });
+      inputs: [{ policy_id: "coin", name: "coin", amount: BigInt(10) }],
+    }, "sig-1");
     assertEquals(
       {
         gold: 2n,
@@ -199,7 +199,7 @@ Deno.test("Test contract interactions", async (t) => {
     );
 
     const txId = await db
-      .createTransaction("cancel_contract", "store_1", "contract")
+      .createTransaction("cancel_contract", "store_1", "contract", "sig-1")
       .catch(() => {
         //ignore error
       });

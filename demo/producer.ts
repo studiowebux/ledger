@@ -7,15 +7,19 @@ function generateRandomRequests(config: {
   participants: string[];
   minAmount: number;
   maxAmount: number;
-  unit: string;
+  policy_id: string;
+  name: string;
   length: number;
+  signature: string;
 }) {
   const {
     participants, // Array of participant names, e.g., ["alice", "bob", "ron"]
     minAmount, // Minimum amount to randomize
     maxAmount, // Maximum amount to randomize
-    unit, // The unit for the transactions, e.g., "gold"
+    policy_id,
+    name, // The resource for the transactions, e.g., "gold"
     length, // Number of requests to generate
+    signature,
   } = config;
 
   if (participants.length < 2) {
@@ -36,7 +40,12 @@ function generateRandomRequests(config: {
         minAmount,
     );
 
-    return ledger.addRequest(from, to, [{ amount, unit }]);
+    return ledger.addRequest(
+      from,
+      to,
+      [{ amount, policy_id, name }],
+      signature,
+    );
   });
 }
 
@@ -79,27 +88,39 @@ const ledger = new Ledger({
 });
 
 await ledger.addAssets("alice", [
-  { amount: BigInt(1000), unit: "gold" },
-  { amount: BigInt(777), unit: "silver" },
-  { amount: BigInt(10_000), unit: "coin" },
+  { amount: BigInt(1000), policy_id: "resource", name: "gold" },
+  { amount: BigInt(777), policy_id: "resource", name: "silver" },
+  { amount: BigInt(10_000), policy_id: "currency", name: "coin" },
 ]);
 await printBalance(ledger);
 
-await ledger.addAssets("alice", [{ amount: BigInt(1230), unit: "gold" }]);
-await ledger.addAssets("ron", [{ amount: BigInt(5550), unit: "gold" }]);
-await ledger.addAssets("bob", [{ amount: BigInt(345), unit: "gold" }]);
+await ledger.addAssets("alice", [{
+  amount: BigInt(1230),
+  policy_id: "resource",
+  name: "gold",
+}]);
+await ledger.addAssets("ron", [{
+  amount: BigInt(5550),
+  policy_id: "resource",
+  name: "gold",
+}]);
+await ledger.addAssets("bob", [{
+  amount: BigInt(345),
+  policy_id: "resource",
+  name: "gold",
+}]);
 await printBalance(ledger);
 
 const txId = await ledger.addRequest("alice", "bob", [
-  { amount: BigInt(500), unit: "gold" },
-]);
+  { amount: BigInt(500), policy_id: "resource", name: "gold" },
+], "sig-1");
 
 await ledger.waitForTransactions([txId]);
 await printBalance(ledger);
 
 const txId1 = await ledger.addRequest("bob", "ron", [
-  { amount: BigInt(124), unit: "gold" },
-]);
+  { amount: BigInt(124), policy_id: "resource", name: "gold" },
+], "sig-1");
 await ledger.waitForTransactions([txId1]);
 await printBalance(ledger);
 
@@ -107,8 +128,10 @@ const requests1 = generateRandomRequests({
   participants: ["alice", "bob", "ron"],
   minAmount: 1,
   maxAmount: 100,
-  unit: "gold",
+  policy_id: "resource",
+  name: "gold",
   length: 10,
+  signature: "sig-1",
 });
 
 const txs = await Promise.all(requests1);
@@ -117,7 +140,11 @@ await ledger.waitForTransactions(txs);
 await printBalance(ledger);
 
 await ledger.addAssets("ron", [
-  { unit: "coin", amount: BigInt(3_333_666_666_999_999) },
+  {
+    policy_id: "currency",
+    name: "coin",
+    amount: BigInt(3_333_666_666_999_999),
+  },
 ]);
 await printBalance(ledger);
 
@@ -125,8 +152,10 @@ const requests = generateRandomRequests({
   participants: ["alice", "bob", "ron"],
   minAmount: 1,
   maxAmount: 100,
-  unit: "gold",
+  policy_id: "resource",
+  name: "gold",
   length: 1000,
+  signature: "sig-1",
 });
 
 const txs1 = await Promise.all(requests);

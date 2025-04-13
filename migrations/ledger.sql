@@ -11,19 +11,21 @@ CREATE TABLE IF NOT EXISTS utxos (
 
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
-    filed BOOLEAN DEFAULT FALSE,
+    executed BOOLEAN DEFAULT FALSE,
     failed BOOLEAN DEFAULT FALSE,
     reason TEXT,
     assets JSONB,
     type VARCHAR(255), -- contract or exchange
     owner TEXT NOT NULL,
+    signature TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW (),
     updated_at TIMESTAMP DEFAULT NOW ()
 );
 
 CREATE TABLE IF NOT EXISTS policies (
-    unit TEXT PRIMARY KEY,
-    immutable BOOLEAN DEFAULT TRUE,
+    policy_id TEXT PRIMARY KEY,
+    immutable BOOLEAN DEFAULT TRUE, -- Controls is an asset can be burn or not.
+    owner TEXT[] NOT NULL, -- Who can Mint new tokens (does not impact burning?)
     created_at TIMESTAMP DEFAULT NOW (),
     updated_at TIMESTAMP DEFAULT NOW ()
 );

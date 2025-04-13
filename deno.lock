@@ -2,9 +2,12 @@
   "version": "4",
   "specifiers": {
     "jsr:@std/assert@*": "1.0.9",
+    "jsr:@std/assert@1": "1.0.9",
     "jsr:@std/internal@^1.0.5": "1.0.5",
     "jsr:@studiowebux/deno-minilog@~0.3.1": "0.3.1",
     "npm:@types/node@*": "22.5.4",
+    "npm:bip39@*": "3.1.0",
+    "npm:crypto@*": "1.0.1",
     "npm:kafkajs@^2.2.4": "2.2.4",
     "npm:postgres@3.4.5": "3.4.5"
   },
@@ -29,11 +32,23 @@
     }
   },
   "npm": {
+    "@noble/hashes@1.7.1": {
+      "integrity": "sha512-B8XBPsn4vT/KJAGqDzbwztd+6Yte3P4V7iafm24bxgDe/mlRuK6xmWPuCNrKt2vDafZ8MfJLlchDG/vYafQEjQ=="
+    },
     "@types/node@22.5.4": {
       "integrity": "sha512-FDuKUJQm/ju9fT/SeX/6+gBzoPzlVCzfzmGkwKvRHQVxi4BntVbyIwf6a4Xn62mrvndLiml6z/UBXIdEVjQLXg==",
       "dependencies": [
         "undici-types"
       ]
+    },
+    "bip39@3.1.0": {
+      "integrity": "sha512-c9kiwdk45Do5GL0vJMe7tS95VjCii65mYAH7DfWl3uW8AVzXKQVUm64i3hzVybBDMp9r7j9iNxR85+ul8MdN/A==",
+      "dependencies": [
+        "@noble/hashes"
+      ]
+    },
+    "crypto@1.0.1": {
+      "integrity": "sha512-VxBKmeNcqQdiUQUW2Tzq0t377b54N2bMtXO/qiLa+6eRRmmC4qT3D4OnTGoT/U6O9aklQ/jTwbOtRMTTY8G0Ig=="
     },
     "kafkajs@2.2.4": {
       "integrity": "sha512-j/YeapB1vfPT2iOIUn/vxdyKEuhuY2PxMBvf5JWux6iSaukAccrMtXEY/Lb7OvavDhOWME589bpLrEdnVHjfjA=="

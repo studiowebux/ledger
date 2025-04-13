@@ -1,9 +1,12 @@
 import { Asset } from "./types.ts";
 
+export const replacer = (_key: unknown, value: unknown): unknown =>
+  typeof value === "bigint" ? value.toString() : value;
+
 export function stringify(input: object): string {
   return JSON.stringify(
     input,
-    (_, value) => typeof value === "bigint" ? Number(value) : value,
+    (key, value) => replacer(key, value),
   );
 }
 
@@ -17,10 +20,14 @@ export function parseAssets(assets: string): Asset[] {
 export function aggregateAssets(assets: Asset[]): Asset[] {
   const grouped = assets.reduce(
     (result, asset) => {
-      if (!result[asset.unit]) {
-        result[asset.unit] = { unit: asset.unit, amount: BigInt(0) };
+      if (!result[`${asset.policy_id}.${asset.name}`]) {
+        result[`${asset.policy_id}.${asset.name}`] = {
+          policy_id: asset.policy_id,
+          amount: BigInt(0),
+          name: asset.name,
+        };
       }
-      result[asset.unit].amount += asset.amount;
+      result[`${asset.policy_id}.${asset.name}`].amount += asset.amount;
       return result;
     },
     {} as Record<string, Asset>,

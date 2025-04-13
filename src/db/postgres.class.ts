@@ -4,13 +4,16 @@ import type Logger from "@studiowebux/deno-minilog";
 import type {
   Asset,
   ContractRaw,
-  PolicyRaw,
   Id,
+  Policy,
+  PolicyRaw,
+  PublicKey,
+  Transaction,
   TransactionRaw,
-  UtxoRaw,
   Utxo,
+  UtxoRaw,
 } from "../types.ts";
-import { stringify } from "../encoder_decoder.ts";
+import { parseAssets, stringify } from "../encoder_decoder.ts";
 
 export class Postgres {
   public sql: postgres.Sql;
@@ -26,12 +29,14 @@ export class Postgres {
     id: string,
     inputs: Asset[],
     outputs: Asset[],
-    owner: string,
+    owner: PublicKey,
     options?: { sql?: postgres.Sql },
   ): Promise<string> {
     this.logger.verbose(`createContract`, id, inputs, outputs, owner);
     const sql = options?.sql || this.sql;
-    await sql`INSERT INTO contracts (id, inputs, outputs, owner) VALUES (${id}, ${stringify(inputs)}, ${stringify(outputs)}, ${owner});`;
+    await sql`INSERT INTO contracts (id, inputs, outputs, owner) VALUES (${id}, ${
+      stringify(inputs)
+    }, ${stringify(outputs)}, ${owner});`;
     this.logger.debug(`Contract saved:`, id);
     return id;
   }
@@ -70,25 +75,66 @@ export class Postgres {
     return id;
   }
 
+  async updateContractState(
+    id: string,
+    inputs: Asset[],
+    outputs: Asset[],
+    executed: boolean,
+    options?: { sql?: postgres.Sql },
+  ): Promise<string> {
+    this.logger.verbose(
+      `updateContractState`,
+      id,
+      stringify(inputs),
+      stringify(outputs),
+    );
+    const sql = options?.sql || this.sql;
+    const updated = await sql<
+      Id[]
+    >`UPDATE contracts SET executed = ${executed}, inputs = ${
+      stringify(inputs)
+    }, outputs = ${
+      stringify(outputs)
+    }, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
+    if (!updated || updated.length === 0) {
+      throw new Error(`Contract ${id} not updated`);
+    }
+    if (updated.length > 1) {
+      throw new Error(`Multiple contracts have been updated`);
+    }
+    return id;
+  }
+
   //#endregion
 
   //#region Policy
-  async createPolicy(unit: string, immutable: boolean = true): Promise<string> {
-    this.logger.verbose(`createPolicy`, unit, immutable);
+  async createPolicy(
+    policy_id: string,
+    owner: PublicKey[],
+    immutable: boolean = true,
+  ): Promise<string> {
+    this.logger.verbose(`createPolicy`, policy_id, immutable, owner);
+
+    if (owner.length === 0) {
+      this.logger.warn(
+        `createPolicy: The policy has no designated owner(s), so anyone can mint new assets.`,
+      );
+    }
+
     await this
-      .sql`INSERT INTO policies (unit, immutable) VALUES (${unit}, ${immutable});`;
-    this.logger.debug(`Policy saved:`, unit);
-    return unit;
+      .sql`INSERT INTO policies (policy_id, immutable, owner) VALUES (${policy_id}, ${immutable}, ${owner});`;
+    this.logger.debug(`Policy saved:`, policy_id);
+    return policy_id;
   }
 
-  async findPolicy(unit: string): Promise<PolicyRaw> {
-    this.logger.verbose(`findPolicy`, unit);
+  async findPolicy(policy_id: string): Promise<Policy> {
+    this.logger.verbose(`findPolicy`, policy_id);
 
     const [policy] = await this.sql<
-      [PolicyRaw?]
-    >`SELECT unit, immutable FROM policies WHERE unit =${unit}`;
+      [Policy?]
+    >`SELECT policy_id, immutable, owner FROM policies WHERE policy_id =${policy_id}`;
     if (!policy) {
-      throw new Error(`Policy ${unit} not found`);
+      throw new Error(`Policy ${policy_id} not found`);
     }
     return policy;
   }
@@ -97,29 +143,39 @@ export class Postgres {
   //#region Transaction
   async createTransaction(
     id: string,
-    owner: string,
+    owner: PublicKey,
     type: "exchange" | "contract",
+    signature: string,
   ): Promise<string> {
     this.logger.verbose(`createTransaction`, id, owner, type);
     await this
-      .sql`INSERT INTO transactions (id, owner, type) VALUES (${id}, ${owner}, ${type});`;
+      .sql`INSERT INTO transactions (id, owner, type, signature) VALUES (${id}, ${owner}, ${type}, ${signature});`;
     this.logger.debug(`Transaction saved:`, id);
     return id;
   }
 
   async updateTransaction(
     id: string,
-    filed: boolean,
+    executed: boolean,
     assets: Asset[] = [],
     reason: string = "",
     failed: boolean = false,
     options?: { sql?: postgres.Sql },
   ): Promise<string> {
-    this.logger.verbose(`updateTransaction`, id, filed, assets, reason, failed);
+    this.logger.verbose(
+      `updateTransaction`,
+      id,
+      executed,
+      assets,
+      reason,
+      failed,
+    );
     const sql = options?.sql || this.sql;
     const updated = await sql<
       Id[]
-    >`UPDATE transactions SET assets = ${stringify(assets)}, filed = ${filed}, failed = ${failed}, reason = ${reason}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
+    >`UPDATE transactions SET assets = ${
+      stringify(assets)
+    }, executed = ${executed}, failed = ${failed}, reason = ${reason}, updated_at = NOW() WHERE id = ${id} RETURNING id;`;
     if (!updated || updated.length === 0) {
       throw new Error(`Transactions ${id} not updated`);
     }
@@ -129,21 +185,27 @@ export class Postgres {
     return id;
   }
 
-  async findTransaction(id: string): Promise<TransactionRaw> {
+  async findTransaction(id: string): Promise<Transaction> {
     this.logger.verbose(`findTransaction`, id);
     const [tx] = await this.sql<
       [TransactionRaw?]
-    >`SELECT id, owner, assets, filed, failed, reason, type, created_at, updated_at FROM transactions WHERE id = ${id};`;
+    >`SELECT id, owner, assets, executed, failed, reason, type, signature, created_at, updated_at FROM transactions WHERE id = ${id};`;
     if (!tx) {
       throw new Error(`Transaction ${id} not found`);
     }
-    return tx;
+
+    const transaction: Transaction = {
+      ...tx,
+      assets: tx.assets ? parseAssets(tx.assets) : [],
+      reason: tx.reason ? tx.reason : "",
+    };
+    return transaction;
   }
   //#endregion
 
   //#region Utxo
   // Find a UTXO by its ID
-  async findUTXO(id: string): Promise<UtxoRaw> {
+  async findUTXO(id: string): Promise<Utxo> {
     this.logger.verbose(`findUTXO`, id);
     const [utxo] = await this.sql<
       [UtxoRaw?]
@@ -151,14 +213,17 @@ export class Postgres {
     if (!utxo) {
       throw new Error(`UTXO ${id} not found`);
     }
-    return utxo;
+    return {
+      ...utxo,
+      assets: parseAssets(utxo.assets),
+    };
   }
 
   // Find all UTXOs owned by a specific owner
   async findUTXOFor(
-    owner: string,
+    owner: PublicKey,
     options?: { sql?: postgres.Sql },
-  ): Promise<UtxoRaw[]> {
+  ): Promise<Utxo[]> {
     this.logger.verbose(`findUTXOFor`, owner);
     const sql = options?.sql || this.sql;
     const utxos = await sql<
@@ -169,7 +234,10 @@ export class Postgres {
       return [];
     }
 
-    return utxos;
+    return utxos.map((utxo) => ({
+      ...utxo,
+      assets: parseAssets(utxo.assets),
+    }));
   }
 
   // Update the spent status of a UTXO
@@ -200,13 +268,15 @@ export class Postgres {
 
   // Create a new UTXO
   async createUTXO(
-    owner: string,
+    owner: PublicKey,
     utxo: Utxo,
     options?: { sql?: postgres.Sql },
   ): Promise<string> {
     this.logger.verbose(`createUTXO`, owner, utxo);
     const sql = options?.sql || this.sql;
-    await sql`INSERT INTO utxos (id, assets, owner, spent) VALUES (${utxo.id}, ${stringify(utxo.assets)}, ${utxo.owner}, ${utxo.spent});`;
+    await sql`INSERT INTO utxos (id, assets, owner, spent) VALUES (${utxo.id}, ${
+      stringify(utxo.assets)
+    }, ${utxo.owner}, ${utxo.spent});`;
     this.logger.debug(`UTXO created:`, utxo.id);
     return utxo.id;
   }
